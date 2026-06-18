@@ -714,7 +714,7 @@ mod tests {
             name: name.to_string(),
             key: None,
             mapped_type: MappedType::Int,
-            args: ColumnArgs { primary_key: false, nullable: false, unique: false, index: false, default: None },
+            args: ColumnArgs { primary_key: false, nullable: false, unique: false, index: false, default: None, server_default: None },
             foreign_key: None,
             doc: None,
             name_range: def_range(),
@@ -727,7 +727,7 @@ mod tests {
             name: name.to_string(),
             key: None,
             mapped_type: if nullable { MappedType::Optional(Box::new(MappedType::Int)) } else { MappedType::Int },
-            args: ColumnArgs { primary_key: false, nullable, unique: false, index: false, default: None },
+            args: ColumnArgs { primary_key: false, nullable, unique: false, index: false, default: None, server_default: None },
             foreign_key: Some(ForeignKeyRef {
                 table: table.to_string(),
                 column: col.to_string(),
@@ -751,6 +751,10 @@ mod tests {
             secondary: None,
             cascade: None,
             is_list,
+            backref: None,
+            remote_side: false,
+            has_foreign_keys: false,
+            viewonly: None,
             name_range: def_range(),
             full_range: def_range(),
             target_range: None,
@@ -825,6 +829,7 @@ mod tests {
             columns: vec!["titel".to_string()], // typo
             column_ranges: vec![def_range()],
             full_range: def_range(),
+            name: None,
         });
         model.columns.insert("title".to_string(), int_col("title"));
         let diags = check_file(&[model], &state);

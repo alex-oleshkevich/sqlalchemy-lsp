@@ -546,15 +546,34 @@ fn parse_constraint_call(call: &Node, source: &[u8]) -> Option<TableArg> {
     let args_node = call.child_by_field_name("arguments")?;
     let mut column_names = Vec::new();
     let mut column_ranges = Vec::new();
+    let mut name: Option<String> = None;
     let mut c = args_node.walk();
     for arg in args_node.named_children(&mut c) {
         if arg.kind() == "string" {
             let col = strip_string_quotes(node_text(arg, source)).to_string();
             column_ranges.push(ts_range(arg));
             column_names.push(col);
+        } else if arg.kind() == "keyword_argument" {
+            let key = arg
+                .child_by_field_name("name")
+                .map(|n| node_text(n, source))
+                .unwrap_or("");
+            if key == "name" {
+                let val = arg
+                    .child_by_field_name("value")
+                    .map(|n| node_text(n, source))
+                    .unwrap_or("");
+                name = Some(strip_string_quotes(val).to_string());
+            }
         }
     }
-    Some(TableArg { kind: kind.to_string(), columns: column_names, column_ranges, full_range })
+    Some(TableArg {
+        kind: kind.to_string(),
+        columns: column_names,
+        column_ranges,
+        full_range,
+        name,
+    })
 }
 
 // ── Relationship extraction ───────────────────────────────────────────────────
@@ -596,6 +615,10 @@ fn try_extract_relationship(
         secondary,
         cascade,
         cascade_range,
+        backref,
+        remote_side,
+        has_foreign_keys,
+        viewonly,
     } = parse_relationship_args(&args_node, source);
 
     let target_model = target
@@ -612,6 +635,10 @@ fn try_extract_relationship(
         secondary,
         cascade,
         is_list,
+        backref,
+        remote_side,
+        has_foreign_keys,
+        viewonly,
         name_range,
         full_range: ts_range(*assign),
         target_range,
@@ -639,6 +666,10 @@ struct RelArgs {
     secondary: Option<String>,
     cascade: Option<String>,
     cascade_range: Option<Range>,
+    backref: Option<String>,
+    remote_side: bool,
+    has_foreign_keys: bool,
+    viewonly: Option<bool>,
 }
 
 fn parse_relationship_args(args: &Node, source: &[u8]) -> RelArgs {
@@ -651,6 +682,10 @@ fn parse_relationship_args(args: &Node, source: &[u8]) -> RelArgs {
     let mut secondary: Option<String> = None;
     let mut cascade: Option<String> = None;
     let mut cascade_range: Option<Range> = None;
+    let mut backref: Option<String> = None;
+    let mut remote_side = false;
+    let mut has_foreign_keys = false;
+    let mut viewonly: Option<bool> = None;
     let mut positional = 0usize;
 
     let mut c = args.walk();
@@ -675,6 +710,10 @@ fn parse_relationship_args(args: &Node, source: &[u8]) -> RelArgs {
                         cascade = Some(strip_string_quotes(val).to_string());
                         cascade_range = val_node.map(|n| ts_range(n));
                     }
+                    "backref" => backref = Some(strip_string_quotes(val).to_string()),
+                    "remote_side" => remote_side = true,
+                    "foreign_keys" => has_foreign_keys = true,
+                    "viewonly" => viewonly = Some(val == "True"),
                     _ => {}
                 }
             }
@@ -709,6 +748,10 @@ fn parse_relationship_args(args: &Node, source: &[u8]) -> RelArgs {
         secondary,
         cascade,
         cascade_range,
+        backref,
+        remote_side,
+        has_foreign_keys,
+        viewonly,
     }
 }
 
@@ -783,7 +826,8 @@ fn parse_mapped_column_args(
                     "nullable" => ca.nullable = val == "True",
                     "unique" => ca.unique = val == "True",
                     "index" => ca.index = val == "True",
-                    "default" | "server_default" => ca.default = Some(val.to_string()),
+                    "default" => ca.default = Some(val.to_string()),
+                    "server_default" => ca.server_default = Some(val.to_string()),
                     _ => {}
                 }
             }

@@ -81,6 +81,8 @@ pub struct ColumnArgs {
     pub unique: bool,
     pub index: bool,
     pub default: Option<String>,
+    /// Source text of the `server_default=` argument, if present.
+    pub server_default: Option<String>,
 }
 
 impl Default for ColumnArgs {
@@ -91,6 +93,7 @@ impl Default for ColumnArgs {
             unique: false,
             index: false,
             default: None,
+            server_default: None,
         }
     }
 }
@@ -116,6 +119,14 @@ pub struct Relationship {
     pub secondary: Option<String>,
     pub cascade: Option<String>,
     pub is_list: bool,
+    /// Source text of the `backref=` argument (legacy; prefer `back_populates`).
+    pub backref: Option<String>,
+    /// True when `remote_side=` is present (needed for self-referential relationships).
+    pub remote_side: bool,
+    /// True when `foreign_keys=` is present (disambiguates multi-FK relationships).
+    pub has_foreign_keys: bool,
+    /// True when `viewonly=True` is set.
+    pub viewonly: Option<bool>,
     pub name_range: Range,
     pub full_range: Range,
     pub target_range: Option<Range>,
@@ -130,6 +141,8 @@ pub struct TableArg {
     pub columns: Vec<String>,
     pub column_ranges: Vec<Range>,
     pub full_range: Range,
+    /// The `name=` argument value, if given.
+    pub name: Option<String>,
 }
 
 /// The type a `Mapped[...]` annotation resolves to.
