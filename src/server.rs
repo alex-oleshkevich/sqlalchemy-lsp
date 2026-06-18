@@ -23,15 +23,17 @@ use tower_lsp_server::{
         DocumentDiagnosticParams, DocumentDiagnosticReport, DocumentDiagnosticReportResult,
         FileChangeType, FileSystemWatcher, FullDocumentDiagnosticReport, GlobPattern,
         GotoDefinitionResponse, InitializeParams, InitializeResult, InitializedParams,
-        MessageType, OneOf,
-        PositionEncodingKind, ReferenceParams, Registration, RelatedFullDocumentDiagnosticReport,
+        MessageType, OneOf, PrepareRenameResponse,
+        PositionEncodingKind, ReferenceParams, RenameOptions, RenameParams, Registration,
+        RelatedFullDocumentDiagnosticReport,
         ServerCapabilities, ServerInfo, SignatureHelpOptions, SignatureHelpParams,
-        TextDocumentSyncCapability, TextDocumentSyncKind, Uri,
+        TextDocumentPositionParams, TextDocumentSyncCapability, TextDocumentSyncKind, Uri,
+        WorkspaceEdit,
     },
 };
 
 use crate::{
-    features::{completion, definition, hover, references, signature_help},
+    features::{completion, definition, hover, references, rename, signature_help},
     pipeline::{run_pass1, run_pass2},
     state::WorkspaceState,
     util::positions::apply_changes,
@@ -200,6 +202,10 @@ impl LanguageServer for Backend {
                 }),
                 definition_provider: Some(OneOf::Left(true)),
                 references_provider: Some(OneOf::Left(true)),
+                rename_provider: Some(OneOf::Right(RenameOptions {
+                    prepare_provider: Some(true),
+                    work_done_progress_options: Default::default(),
+                })),
                 hover_provider: Some(tower_lsp_server::ls_types::HoverProviderCapability::Simple(true)),
                 ..ServerCapabilities::default()
             },
@@ -411,6 +417,20 @@ impl LanguageServer for Backend {
         let include_decl = params.context.include_declaration;
         let locs = references::provide_references(&uri, pos, include_decl, &self.state);
         Ok(if locs.is_empty() { None } else { Some(locs) })
+    }
+
+    // ── Rename ────────────────────────────────────────────────────────────────
+
+    async fn prepare_rename(&self, params: TextDocumentPositionParams) -> Result<Option<PrepareRenameResponse>> {
+        let uri = params.text_document.uri;
+        let pos = params.position;
+        Ok(rename::prepare_rename(&uri, pos, &self.state))
+    }
+
+    async fn rename(&self, params: RenameParams) -> Result<Option<WorkspaceEdit>> {
+        let uri = params.text_document_position.text_document.uri;
+        let pos = params.text_document_position.position;
+        Ok(rename::compute_rename(&uri, pos, &params.new_name, &self.state))
     }
 }
 
