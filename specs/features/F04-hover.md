@@ -2,7 +2,7 @@
 
 > **Status:** Approved
 >
-> **Version:** 0.1   ·   **Last updated:** 2026-06-18
+> **Version:** 0.2   ·   **Last updated:** 2026-06-18
 >
 > **Purpose:** The hover cards the server renders for SQLAlchemy constructs — models, columns, relationships, foreign keys, cascade tokens, and `back_populates` — including the cross-referenced attribute-access card for `User.name` that joins facts from across the workspace.
 >
@@ -80,7 +80,7 @@ The cross-referenced half of the card is what the legacy server lacked. From the
 
 - **Index / constraint membership** — whether any `TableArg` on the model names this column, rendering the index or constraint name (`ix_users_full_name`).
 - **The FK target across files** — when the column carries a `ForeignKeyRef`, it follows `table_index` then `model_index` to render the resolved target (`→ users.id (User.id)`).
-- **Relationships that use the column** — any relationship on the owning model whose foreign key or `foreign_keys=` rides on this column, rendered as `Post.author ↔ User.posts`. When no relationship references it, the card says so plainly (`— (no relationship references this column)`).
+- **Relationships and foreign keys that use the column** — the `used by` line lists any relationship on the owning model whose foreign key rides on this column (`Post.author ↔ User.posts`) **and** any foreign key elsewhere that points *at* this column — so hovering a primary key like `User.id` shows every `FK → User.id` and the relationships they back. The list is capped at six entries, then a `+N more` line, so a heavily-referenced key doesn't produce an unbounded card. When nothing references it, the card says so plainly (`— (no relationship references this column)`). The populated form is shown in [§6.1](#61-column-card--username).
 
 When a cross-reference can't be resolved — an FK to a table no model defines, a forward-ref target the index doesn't know — that line is omitted or marked unresolved rather than guessed (constitution P4). The column's own facts always render; only the cross-referenced lines depend on resolution.
 
@@ -132,6 +132,14 @@ Hover stays silent on anything we don't own.
 
 A plain local variable, an imported function, a stdlib type, a keyword, a string that isn't an FK literal — none of these produce a card. The handler returns `None`, and the editor falls through to the user's Python LSP, which answers generic Python hover (constitution P5). This is the companion principle made concrete: we add a card only where we have something SQLAlchemy-specific to say, and we get out of the way everywhere else.
 
+### 5.9 The model card
+
+Hovering a model's class name renders a card that *summarizes* the model — it never dumps every column.
+
+**REQ-HOV-10 — The model card summarizes columns and relations; it never lists every column inline.**
+
+When you hover a model class, the card shows its table, a **column summary**, a **relationship summary**, and the docstring. A model can have dozens of columns, so the card does not print them all. The `columns` line leads with the **count** and the load-bearing highlights — the primary key, the unique columns, and the foreign keys — then a capped preview of about six column names followed by `+N more`. The `relations` line caps the same way. The card answers "what shape is this model?"; the **full, ordered enumeration is the document outline** ([F08-symbols](F08-symbols.md)), which is where a reader goes to see every column. A model with no `__tablename__` shows `— (no __tablename__)` on the table line rather than a guessed name (P4). The card is shown in [§6.3](#63-model-card--user).
+
 ## 6. UI Mockups
 
 Hover cards render as Markdown in the editor's hover popover. The sketches below are the layout contract — the exact fields, order, and labels each card shows. They are drawn as bordered cards for review; the editor renders the underlying Markdown in its own popover chrome. Severity and state are always conveyed in words, never color alone (constitution §4.6).
@@ -155,7 +163,24 @@ Shown when the cursor is on a column attribute. The headline cross-referenced ca
 └────────────────────────────────────────────────────────┘
 ```
 
-States: aliased (the `column` line shown) vs. not aliased (line omitted) · with a `comment=`/`doc` vs. without (line omitted) · in an index/constraint vs. not · `used by` listing relationships vs. the empty `—` line.
+**Variant — `used by` populated.** Hovering a referenced column — a primary key, or any column a foreign key points at — fills the `used by` line with the references the index resolves: the foreign keys that target it and the relationships they back. The list caps at six entries, then `+N more`, so a heavily-referenced key stays bounded:
+
+```
+┌────────────────────────────────────────────────────────┐
+│ User.id                                  (column, pk)   │
+├────────────────────────────────────────────────────────┤
+│ table     users                                         │
+│ type      Mapped[int]  ·  Integer                       │
+│ nullable  false    unique  true    primary key  true    │
+│ used by   FK  posts.author_id → User.id                 │
+│           rel Post.author ↔ User.posts                  │
+│           FK  comments.author_id → User.id              │
+│           rel Profile.user ↔ User.profile               │
+│           … +2 more                                      │
+└────────────────────────────────────────────────────────┘
+```
+
+States: aliased (the `column` line shown) vs. not aliased (line omitted) · with a `comment=`/`doc` vs. without (line omitted) · in an index/constraint vs. not · `used by` empty (`— (no relationship references this column)`) vs. populated and capped at six with `+N more`.
 
 ### 6.2 FK column card — `Post.author_id`
 
@@ -177,20 +202,24 @@ States: FK target resolved (`→ users.id (User.id)`) vs. unresolved (`→ users
 
 ### 6.3 Model card — `User`
 
-Shown when the cursor is on a model's class name. Summarizes the model's table, columns, relationships, and docstring.
+Shown when the cursor is on a model's class name. A model can have dozens of columns, so the card **summarizes** rather than enumerates (REQ-HOV-10): a count, the load-bearing highlights (pk, unique, fks), and a capped preview — never every column. The full ordered list is the document outline ([F08-symbols](F08-symbols.md)).
 
 ```
 ┌────────────────────────────────────────────────────────┐
 │ class User(Base)                            (model)     │
 ├────────────────────────────────────────────────────────┤
 │ table     users                                         │
-│ columns   id (pk), full_name, email (unique), created   │
-│ relations posts → list[Post],  profile → Profile (1:1)  │
+│ columns   12  ·  pk id  ·  unique email  ·  2 fk         │
+│           id, full_name, email, created … +8 more        │
+│ relations 3  ·  posts → list[Post] · profile → Profile  │
+│           … +1 more                                      │
 │ doc       A registered account holder.                  │
 └────────────────────────────────────────────────────────┘
 ```
 
-States: has `__tablename__` vs. not (the `table` line reads `— (no __tablename__)`) · has a docstring vs. not (line omitted) · a relationship target that resolves vs. one marked unresolved.
+For a small model every column fits and there is no `+N more`; the example above shows the capped form a wide model produces. To *see* every column, open the outline (F08) or go-to-definition — hover gives the shape, the outline gives the list.
+
+States: few columns (all shown, no `+N more`) vs. many (count + highlights + capped preview) · has `__tablename__` vs. not (the `table` line reads `— (no __tablename__)`) · has a docstring vs. not (line omitted) · a relationship target that resolves vs. one marked unresolved.
 
 ### 6.4 Cascade-token card
 
@@ -311,7 +340,9 @@ Each row is a behavior under test. Rendered cards are snapshotted with `insta` (
 | `sa.`-prefixed forms render identical cards | unit | [clean-blog](../foundations/E17-testing.md#clean-blog) | REQ-HOV-08 |
 | Non-SQLAlchemy symbol → null | unit | [clean-blog](../foundations/E17-testing.md#clean-blog) | REQ-HOV-09 |
 | Range correct under UTF-8 and UTF-16 | integration | [non-ascii](../foundations/E17-testing.md#non-ascii) | REQ-HOV-01 |
-| Model card with no `__tablename__` | integration | [missing-tablename](../foundations/E17-testing.md#missing-tablename) | REQ-HOV-02 |
+| Column card `used by` populated by FKs + relationships, capped at six with `+N more` | integration | [clean-blog](../foundations/E17-testing.md#clean-blog) | REQ-HOV-03 |
+| Model card summarizes a wide model: count + pk/unique/fk highlights + capped preview (`+N more`) | integration | [large-workspace](../foundations/E17-testing.md#large-workspace) | REQ-HOV-10 |
+| Model card with no `__tablename__` → `— (no __tablename__)` | integration | [missing-tablename](../foundations/E17-testing.md#missing-tablename) | REQ-HOV-10 |
 
 ### 11.3 Fixtures
 
@@ -324,14 +355,15 @@ Every load-bearing requirement maps to a test — this table is the proof.
 | Requirement | Covered by |
 |---|---|
 | REQ-HOV-01 | `req_hov_01_hit_test_innermost`, `req_hov_01_range_both_encodings` |
-| REQ-HOV-02 | `req_hov_02_column_card_facts`, `req_hov_02_model_card_no_tablename` |
-| REQ-HOV-03 | `req_hov_03_column_card_cross_refs` |
+| REQ-HOV-02 | `req_hov_02_column_card_facts` |
+| REQ-HOV-03 | `req_hov_03_column_card_cross_refs`, `req_hov_03_used_by_populated_capped` |
 | REQ-HOV-04 | `req_hov_04_fk_string_resolves`, `req_hov_04_fk_string_unresolved` |
 | REQ-HOV-05 | `req_hov_05_relationship_card` |
 | REQ-HOV-06 | `req_hov_06_cascade_tokens` |
 | REQ-HOV-07 | `req_hov_07_back_populates_counterpart`, `req_hov_07_back_populates_missing` |
 | REQ-HOV-08 | `req_hov_08_sa_prefixed_forms` |
 | REQ-HOV-09 | `req_hov_09_non_sa_returns_null` |
+| REQ-HOV-10 | `req_hov_10_model_card_summary_capped`, `req_hov_10_model_card_no_tablename` |
 
 ## 12. End-to-End Test Plan
 
@@ -398,5 +430,6 @@ The §12.2 scenarios, written Given/When/Then, are this feature's acceptance cri
 
 ## 16. Changelog
 
+- **2026-06-18** — v0.2: added the explicit model-card requirement (REQ-HOV-10) — the card **summarizes** columns (count + pk/unique/fk highlights + a capped preview with `+N more`) instead of listing every column, deferring the full enumeration to the F08 outline. Extended REQ-HOV-03 so the column card's `used by` line also lists foreign keys that point *at* the column (e.g. every `FK → User.id`) and caps long lists at six. Added the §6.1 populated-`used by` variant card, rebuilt the §6.3 model card for wide models, and added the matching test rows.
 - **2026-06-18** — Approved.
 - **2026-06-17** — Initial draft. Ported the legacy hover cards (model, column, FK string, relationship, cascade, `back_populates`) and specified the new cross-referenced column card — DB alias, index/constraint membership, cross-file FK target, and relationships-that-use — plus the `sa.`-prefixed-form rule and the null-on-non-SQLAlchemy companion rule. Added the three canonical ASCII cards (column, FK column, model), the cascade and relationship card sketches, the testing and E2E plans, and the §13.1/§13.2 non-functional sections.
