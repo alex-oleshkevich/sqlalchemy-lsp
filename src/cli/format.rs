@@ -1,5 +1,6 @@
 use std::io::Write;
 
+use owo_colors::OwoColorize;
 use serde::Serialize;
 use tower_lsp_server::ls_types::DiagnosticSeverity;
 
@@ -83,7 +84,7 @@ pub fn render<W: Write>(
 ) {
     match reporter {
         Reporter::Concise => render_concise(findings, files_checked, fix_result, use_color, out),
-        Reporter::Full => render_full(findings, files_checked, fix_result, out),
+        Reporter::Full => render_full(findings, files_checked, fix_result, use_color, out),
         Reporter::Json => render_json(findings, out),
         Reporter::JsonLines => render_json_lines(findings, out),
         Reporter::Grouped => render_grouped(findings, files_checked, fix_result, use_color, out),
@@ -116,6 +117,7 @@ fn write_summary<W: Write>(
     findings: &[Finding],
     files_checked: usize,
     fix_result: Option<&FixResult>,
+    use_color: bool,
     out: &mut W,
 ) {
     if findings.is_empty() && fix_result.is_none() {
@@ -143,16 +145,36 @@ fn write_summary<W: Write>(
         let (errors, warnings, infos, hints) = count_by_severity(findings);
         let mut parts: Vec<String> = Vec::new();
         if errors > 0 {
-            parts.push(format!("{errors} errors"));
+            let label = if use_color {
+                "errors".red().bold().to_string()
+            } else {
+                "errors".to_string()
+            };
+            parts.push(format!("{errors} {label}"));
         }
         if warnings > 0 {
-            parts.push(format!("{warnings} warnings"));
+            let label = if use_color {
+                "warnings".yellow().bold().to_string()
+            } else {
+                "warnings".to_string()
+            };
+            parts.push(format!("{warnings} {label}"));
         }
         if infos > 0 {
-            parts.push(format!("{infos} info"));
+            let label = if use_color {
+                "info".blue().to_string()
+            } else {
+                "info".to_string()
+            };
+            parts.push(format!("{infos} {label}"));
         }
         if hints > 0 {
-            parts.push(format!("{hints} hints"));
+            let label = if use_color {
+                "hints".dimmed().to_string()
+            } else {
+                "hints".to_string()
+            };
+            parts.push(format!("{hints} {label}"));
         }
         let n = findings.len();
         let files: std::collections::HashSet<&str> =
@@ -187,23 +209,47 @@ fn write_summary<W: Write>(
     }
 }
 
+// ── color helpers ─────────────────────────────────────────────────────────────
+
+fn sev_colored_code(code: &str, severity: DiagnosticSeverity, use_color: bool) -> String {
+    if !use_color {
+        return code.to_string();
+    }
+    match severity {
+        DiagnosticSeverity::ERROR => code.red().bold().to_string(),
+        DiagnosticSeverity::WARNING => code.yellow().bold().to_string(),
+        DiagnosticSeverity::HINT => code.dimmed().to_string(),
+        _ => code.yellow().to_string(),
+    }
+}
+
+fn sev_colored_carets(carets: &str, severity: DiagnosticSeverity) -> String {
+    match severity {
+        DiagnosticSeverity::ERROR => carets.red().to_string(),
+        DiagnosticSeverity::WARNING => carets.yellow().to_string(),
+        DiagnosticSeverity::HINT => carets.dimmed().to_string(),
+        _ => carets.yellow().to_string(),
+    }
+}
+
 // ── concise ───────────────────────────────────────────────────────────────────
 
 fn render_concise<W: Write>(
     findings: &[Finding],
     files_checked: usize,
     fix_result: Option<&FixResult>,
-    _use_color: bool,
+    use_color: bool,
     out: &mut W,
 ) {
     for f in findings {
+        let code_str = sev_colored_code(f.code.as_str(), f.severity, use_color);
         let _ = writeln!(
             out,
             "{}:{}:{}: {} {}",
-            f.rel_path, f.line, f.col, f.code, f.message
+            f.rel_path, f.line, f.col, code_str, f.message
         );
     }
-    write_summary(findings, files_checked, fix_result, out);
+    write_summary(findings, files_checked, fix_result, use_color, out);
 }
 
 // ── pylint ────────────────────────────────────────────────────────────────────
@@ -212,13 +258,13 @@ fn render_pylint<W: Write>(
     findings: &[Finding],
     files_checked: usize,
     fix_result: Option<&FixResult>,
-    _use_color: bool,
+    use_color: bool,
     out: &mut W,
 ) {
     for f in findings {
         let _ = writeln!(out, "{}:{}: [{}] {}", f.rel_path, f.line, f.code, f.message);
     }
-    write_summary(findings, files_checked, fix_result, out);
+    write_summary(findings, files_checked, fix_result, use_color, out);
 }
 
 // ── full ──────────────────────────────────────────────────────────────────────
@@ -227,32 +273,69 @@ fn render_full<W: Write>(
     findings: &[Finding],
     files_checked: usize,
     fix_result: Option<&FixResult>,
+    use_color: bool,
     out: &mut W,
 ) {
     for f in findings {
-        let _ = writeln!(out, "{} {}", f.code, f.message);
-        let _ = writeln!(out, "  --> {}:{}:{}", f.rel_path, f.line, f.col);
-        let _ = writeln!(out, "   |");
+        let line_str = f.line.to_string();
+        let pad = " ".repeat(line_str.len());
+
+        let code_str = sev_colored_code(f.code.as_str(), f.severity, use_color);
+        let msg_str = if use_color {
+            f.message.as_str().bold().to_string()
+        } else {
+            f.message.clone()
+        };
+        let arrow = if use_color { "-->".blue().to_string() } else { "-->".to_string() };
+        let pipe = if use_color { "|".blue().to_string() } else { "|".to_string() };
+        let line_num_colored = if use_color {
+            line_str.as_str().blue().to_string()
+        } else {
+            line_str.clone()
+        };
+
+        let _ = writeln!(out, "{code_str}: {msg_str}");
+        let _ = writeln!(out, "{pad} {arrow} {}:{}:{}", f.rel_path, f.line, f.col);
+        let _ = writeln!(out, "{pad} {pipe}");
         if let Some(src) = &f.source_line {
-            let gutter = format!("{} |", f.line);
-            let _ = writeln!(out, "{gutter}     {src}");
+            let _ = writeln!(out, "{line_num_colored} {pipe} {src}");
             let span_width = (f.end_col.saturating_sub(f.col) as usize).max(1);
             let indent = f.col.saturating_sub(1) as usize;
-            let carets = "^".repeat(span_width);
-            let _ = writeln!(out, "   |     {}{}", " ".repeat(indent), carets);
+            let raw_carets = "^".repeat(span_width);
+            let carets_str = if use_color {
+                sev_colored_carets(&raw_carets, f.severity)
+            } else {
+                raw_carets
+            };
+            let _ = writeln!(out, "{pad} {pipe} {}{}", " ".repeat(indent), carets_str);
         }
-        let _ = writeln!(out, "   |");
+        let _ = writeln!(out, "{pad} {pipe}");
         if let Some(help) = help_for_code(&f.code) {
-            let _ = writeln!(out, "   = help: {help}");
+            let help_label = if use_color {
+                "help".yellow().bold().to_string()
+            } else {
+                "help".to_string()
+            };
+            let help_text = if use_color {
+                help.white().bold().to_string()
+            } else {
+                help.to_string()
+            };
+            let _ = writeln!(out, "{pad} = {help_label}: {help_text}");
         }
+        let note_label = if use_color {
+            "note".yellow().bold().to_string()
+        } else {
+            "note".to_string()
+        };
         let _ = writeln!(
             out,
-            "   = note: disable with `# noqa: {}` or in [tool.sqlalchemy-lsp]",
+            "{pad} = {note_label}: disable with `# noqa: {}` or in [tool.sqlalchemy-lsp]",
             f.code
         );
         let _ = writeln!(out);
     }
-    write_summary(findings, files_checked, fix_result, out);
+    write_summary(findings, files_checked, fix_result, use_color, out);
 }
 
 fn help_for_code(code: &str) -> Option<&'static str> {
@@ -276,22 +359,27 @@ fn render_grouped<W: Write>(
     findings: &[Finding],
     files_checked: usize,
     fix_result: Option<&FixResult>,
-    _use_color: bool,
+    use_color: bool,
     out: &mut W,
 ) {
-    // Group by file path
     let mut by_file: std::collections::BTreeMap<&str, Vec<&Finding>> =
         std::collections::BTreeMap::new();
     for f in findings {
         by_file.entry(f.rel_path.as_str()).or_default().push(f);
     }
     for (file, file_findings) in &by_file {
-        let _ = writeln!(out, "{file}");
+        let file_header = if use_color {
+            file.bold().to_string()
+        } else {
+            file.to_string()
+        };
+        let _ = writeln!(out, "{file_header}");
         for f in file_findings {
-            let _ = writeln!(out, "  {}:{}: {} {}", f.line, f.col, f.code, f.message);
+            let code_str = sev_colored_code(f.code.as_str(), f.severity, use_color);
+            let _ = writeln!(out, "  {}:{}: {} {}", f.line, f.col, code_str, f.message);
         }
     }
-    write_summary(findings, files_checked, fix_result, out);
+    write_summary(findings, files_checked, fix_result, use_color, out);
 }
 
 // ── json ──────────────────────────────────────────────────────────────────────
@@ -574,7 +662,7 @@ mod tests {
     fn req_cli_07_full_reporter() {
         let out = render_to_string(&[sample()], &Reporter::Full);
         assert!(
-            out.contains("SQLA-W303 FK type mismatch"),
+            out.contains("SQLA-W303: FK type mismatch"),
             "full header: {out}"
         );
         assert!(
