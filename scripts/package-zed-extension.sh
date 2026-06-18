@@ -7,7 +7,7 @@ DIST="${1:-.}"
 ZED_SRC="editors/zed"
 WASM_TARGET="wasm32-wasip2"
 VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
-OUTPUT="$DIST/babel-lsp-zed-$VERSION.zip"
+OUTPUT="$DIST/sqlalchemy-lsp-zed-$VERSION.zip"
 
 mkdir -p "$DIST"
 
@@ -21,9 +21,10 @@ rustup target add "$WASM_TARGET"
 STAGE=$(mktemp -d)
 trap 'rm -rf "$STAGE"' EXIT
 
+cp LICENSE "$ZED_SRC/"
 cp "$ZED_SRC/extension.toml" "$STAGE/"
-cp -r "$ZED_SRC/languages" "$STAGE/"
-cp "$ZED_SRC/target/$WASM_TARGET/release/babel_lsp_zed.wasm" "$STAGE/extension.wasm"
+cp LICENSE "$STAGE/"
+cp "$ZED_SRC/target/$WASM_TARGET/release/sqlalchemy_lsp_zed.wasm" "$STAGE/extension.wasm"
 
 (cd "$STAGE" && zip -r "$OLDPWD/$OUTPUT" .)
 

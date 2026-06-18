@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install the babel-lsp Zed extension for local development.
+# Install the sqlalchemy-lsp Zed extension for local development.
 # Requires: Rust, wasm32-wasip2 target, Zed, python3.
 set -euo pipefail
 
@@ -12,7 +12,7 @@ echo "Building extension WASM..."
   cargo build --release --target wasm32-wasip2 2>&1
 )
 
-WASM_BIN="$EXT_DIR/target/wasm32-wasip2/release/babel_lsp_zed.wasm"
+WASM_BIN="$EXT_DIR/target/wasm32-wasip2/release/sqlalchemy_lsp_zed.wasm"
 if [[ ! -f "$WASM_BIN" ]]; then
   echo "Error: WASM binary not found at $WASM_BIN" >&2
   exit 1
@@ -24,7 +24,7 @@ else
   ZED_EXT_BASE="${XDG_DATA_HOME:-$HOME/.local/share}/zed/extensions"
 fi
 
-TARGET="$ZED_EXT_BASE/installed/babel"
+TARGET="$ZED_EXT_BASE/installed/sqlalchemy-lsp"
 INDEX="$ZED_EXT_BASE/index.json"
 
 rm -rf "$TARGET"
@@ -44,22 +44,22 @@ with open(index_path) as f:
 if "extensions" not in index:
     index["extensions"] = {}
 
-index["extensions"]["babel"] = {
+index["extensions"]["sqlalchemy-lsp"] = {
     "manifest": {
-        "id": "babel",
-        "name": "babel",
+        "id": "sqlalchemy-lsp",
+        "name": "SQLAlchemy LSP",
         "version": "0.1.0",
         "schema_version": 1,
-        "description": "LSP-only Zed extension that starts babel-lsp",
-        "repository": "https://github.com/alex-oleshkevich/babel-lsp",
-        "authors": ["Alex Oleshkevich <techsupport@investerra.ch>"],
-        "lib": {"kind": "Rust", "version": "0.7.0"},
+        "description": "Language server for SQLAlchemy and Alembic: diagnostics, completion, hover, navigation",
+        "repository": "https://github.com/alex-oleshkevich/sqlalchemy-lsp",
+        "authors": ["Alex Oleshkevich <alex.oleshkevich@gmail.com>"],
+        "lib": {"kind": "Rust", "version": "0.3.0"},
         "themes": [],
         "icon_themes": [],
         "languages": [],
         "grammars": {},
         "language_servers": {
-            "babel-lsp": {
+            "sqlalchemy_lsp": {
                 "language": None,
                 "languages": ["Python"],
                 "language_ids": {"Python": "python"},
@@ -77,7 +77,7 @@ index["extensions"]["babel"] = {
 with open(index_path, "w") as f:
     json.dump(index, f, indent=2)
 
-print(f"Registered babel in {index_path}")
+print(f"Registered sqlalchemy-lsp in {index_path}")
 PYEOF
 else
   echo "Warning: $INDEX not found — start Zed first, then re-run this script."
@@ -86,4 +86,4 @@ fi
 echo ""
 echo "Done. Restart Zed to activate the extension."
 echo "Then add to ~/.config/zed/settings.json:"
-echo '  "languages": { "Python": { "language_servers": ["babel-lsp", "..."] } }'
+echo '  "languages": { "Python": { "language_servers": ["sqlalchemy_lsp", "..."] } }'

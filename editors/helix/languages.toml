@@ -1,0 +1,10 @@
+# Merge this into ~/.config/helix/languages.toml
+# Order matters: pyright first keeps its hover/goto primary (see F15 spec §5.3).
+
+[language-server.sqlalchemy-lsp]
+command = "sqlalchemy-lsp"
+args = ["lsp", "--stdio"]
+
+[[language]]
+name = "python"
+language-servers = ["pyright", "sqlalchemy-lsp"]

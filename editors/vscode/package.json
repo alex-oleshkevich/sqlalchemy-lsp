@@ -1,0 +1,40 @@
+{
+  "name": "sqlalchemy-lsp",
+  "displayName": "SQLAlchemy LSP",
+  "description": "Language server for SQLAlchemy and Alembic: diagnostics, completion, hover, navigation",
+  "version": "0.1.0",
+  "publisher": "alex-oleshkevich",
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Programming Languages"],
+  "activationEvents": ["onLanguage:python"],
+  "main": "./out/extension",
+  "contributes": {
+    "commands": [
+      {
+        "command": "sqlalchemy-lsp.showSchema",
+        "title": "SQLAlchemy: Show Schema"
+      }
+    ],
+    "configuration": {
+      "title": "SQLAlchemy LSP",
+      "properties": {
+        "sqlalchemy-lsp.serverPath": {
+          "type": "string",
+          "default": "sqlalchemy-lsp",
+          "description": "Path to the sqlalchemy-lsp binary (defaults to resolving from PATH)"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p .",
+    "package": "npx vsce package"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.0"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.0.0"
+  }
+}
