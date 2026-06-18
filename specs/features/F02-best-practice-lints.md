@@ -2,7 +2,7 @@
 
 > **Status:** Draft
 >
-> **Version:** 0.1   ·   **Last updated:** 2026-06-17
+> **Version:** 0.2   ·   **Last updated:** 2026-06-18
 >
 > **Purpose:** The configurable best-practice lint set — the rules that flag SQLAlchemy code that *works* but invites a bug, a deprecation, or a maintenance headache. Every rule ships on by default except two of the hardest heuristics.
 >
@@ -130,7 +130,7 @@ These three rules sit alongside the F01 structure diagnostics (`SQLA-W101` missi
       })
   ```
 
-- **Detectability:** medium. It reads the resolved base's `MetaData` — which depends on [E30 REQ-EXTRACT-09](../foundations/E30-extraction-and-indexing.md#59-resolving-user-defined-base-classes) correctly resolving the base. The rule fires **once per resolved base**, anchored on the base class, not once per model. The `naming_convention` config key ([E15](../foundations/E15-app-config.md#54-the-key-reference)) tells the server the project's intended convention, which also informs `SQLA-H106`. F11 scaffolds a convention block.
+- **Detectability:** medium. It reads the convention **only from code** — the resolved base's `MetaData` ([E30 REQ-EXTRACT-09](../foundations/E30-extraction-and-indexing.md#59-resolving-user-defined-base-classes)), never from config. The rule fires **once per resolved base**, anchored on the base class, not once per model. Known limitation: a project that configures its `naming_convention` in Alembic's `env.py` rather than on the declarative base is *not* seen, so this rule will false-positive there — disable it in config or `# noqa` it (§10, OQ-LINT-2 in §15). F11 scaffolds a convention block.
 
 ### 5.3 Columns & types (`SQLA-2xx`)
 
@@ -628,6 +628,7 @@ Now `SQLA-H414`/`H415` stop firing entirely, and `SQLA-H205` reports at error se
 - **Off-by-default rule in `ignore` but never `select` → no-op.** Ignoring `SQLA-H416`/`SQLA-H602` while they're already off is harmless, not an error ([E15 §9](../foundations/E15-app-config.md#9-edge-cases--failure-modes)).
 - **W413 vs F01's W404 overlap.** When `uselist=` *explicitly* contradicts the annotation, F01's `SQLA-W404` owns it; F02's `SQLA-W413` fires only on the softer annotation-should-be-a-collection case. The two never double-report the same site.
 - **H106 silenced by a naming convention.** When the resolved base sets a `naming_convention` that names the constraint shape, `SQLA-H106` (unnamed-constraint) stays silent — the convention names it automatically.
+- **Convention configured in Alembic `env.py` → `SQLA-H106`/`SQLA-H107` false-positive.** We read the `naming_convention` only from the resolved base's `MetaData` in code (v0.2; the config key was dropped). A project that sets its convention in `env.py` instead is not seen, so both rules may fire incorrectly. The escape hatch is to disable the rule (`diagnostics.ignore`) or `# noqa` it. Tracked as OQ-LINT-2 (§15).
 - **Partial / mid-keystroke file.** A class with `ERROR` nodes lints its well-formed columns and skips the broken one; no crash (constitution P3; [E16](../foundations/E16-conventions.md)).
 - **A `# noqa` that matched no F02 finding → `SQLA-W901`.** An unused suppression is itself reported ([E15 REQ-CFG-10](../foundations/E15-app-config.md#56-inline-suppression-with--noqa)).
 
@@ -777,6 +778,7 @@ Accessibility (§13.2) is N/A — F02 is a pure-data diagnostics feature with no
 ## 15. Open Questions & Decisions
 
 - **OQ-LINT-1** — `SQLA-H414`/`H415` (lazy-loading strategy) encode a performance *opinion*, not a fact. Should they ship at `info` rather than `hint`, or be grouped under a single toggle so a team can disable all loading-strategy hints at once? Deferred; the per-rule `ignore` already covers the common case.
+- **OQ-LINT-2** — `SQLA-H106`/`SQLA-H107` read the `naming_convention` only from the resolved base's `MetaData` in code (the config key was dropped in v0.2). A project that configures its convention in Alembic's `env.py` is not seen and gets a false positive. Should the extractor learn to read a convention from `env.py`, or is the `ignore`/`# noqa` escape hatch enough? Deferred — most 2.0 projects set the convention on the base.
 - **Resolved — default-on-except-two.** Whether best-practice lints default on was settled by [ADR-003](../decisions/ADR-003-comprehensive-lints-defaults.md): on, except `SQLA-H416` and `SQLA-H602`.
 - **Resolved — F01/F02 split.** Correctness diagnostics (`SQLA-1xx`–`4xx` core) live in [F01](F01-orm-correctness-diagnostics.md); best-practice lints live here. The two never duplicate a code, and overlapping cases (W413 vs W404) have a clear owner (§10).
 
@@ -787,4 +789,5 @@ Accessibility (§13.2) is N/A — F02 is a pure-data diagnostics feature with no
 
 ## 17. Changelog
 
+- **2026-06-18** — v0.2: `SQLA-H106`/`SQLA-H107` now read the `naming_convention` **only from the resolved base's `MetaData`** in code; the `naming_convention` config key was dropped from [E15](../foundations/E15-app-config.md). Added the `env.py`-configured-convention false-positive edge case (§10) and OQ-LINT-2 (§15).
 - **2026-06-17** — Initial draft. Specified the 27 best-practice lints across structure (`SQLA-W104`/`H106`/`H107`), columns & types (`H202`/`W203`/`W204`/`H205`/`H206`/`I207`), foreign keys (`W304`/`W305`), relationships (`W411`/`H412`/`W413`/`H414`/`H415`/`H416`), modernization (`W501`/`W502`/`I503`/`W504`/`I505`/`I506`), and ORM extensions (`H601`/`H602`/`H603`), each with a `REQ-LINT-NN`, default severity/state, trigger, message, example, and detectability notes. Recorded the default-on-except-two policy ([ADR-003](../decisions/ADR-003-comprehensive-lints-defaults.md)), the F01 cross-reference boundary, the per-rule test plan with §11.4 coverage, and the end-to-end journeys including config override, `# noqa` suppression, and CLI/server parity.

@@ -2,7 +2,7 @@
 
 > **Status:** Draft
 >
-> **Version:** 0.1   ·   **Last updated:** 2026-06-17
+> **Version:** 0.2   ·   **Last updated:** 2026-06-18
 >
 > **Purpose:** Where the server's settings come from, how it finds your models and migrations when you say nothing, every config key it reads, the `SQLA-` diagnostic-code scheme, and how to silence a finding inline with `# noqa`.
 >
@@ -59,7 +59,7 @@ Settings resolve from these sources, highest precedence first:
 2. `sqlalchemy-lsp.toml` → root-level keys — a dedicated file when you'd rather keep LSP config out of `pyproject.toml`.
 3. Built-in defaults — under everything.
 
-Precedence is **per key, not per file**. A `pyproject.toml` may set `target_dialect` while leaving `naming_convention` to `sqlalchemy-lsp.toml`, and both win for the keys they set. List-valued keys like `diagnostics.ignore` accumulate across sources; map-valued keys like `diagnostics.severity` merge, with the higher-precedence source winning per entry.
+Precedence is **per key, not per file**. A `pyproject.toml` may set `target_dialect` while leaving `model_paths` to `sqlalchemy-lsp.toml`, and both win for the keys they set. List-valued keys like `diagnostics.ignore` accumulate across sources; map-valued keys like `diagnostics.severity` merge, with the higher-precedence source winning per entry.
 
 ### 5.2 Model-package discovery
 
@@ -88,7 +88,6 @@ These are every setting the server reads, with its type, default, and what it do
 | `model_paths` | `string[]` | `[]` (auto-discover) | Extra directories to scan for models ([E30](E30-extraction-and-indexing.md)). |
 | `alembic_path` | `string` | `null` (auto-discover) | Path to the Alembic migration root ([F13](../features/F13-alembic-support.md)). |
 | `target_dialect` | `string` | `null` | SQL dialect (`postgresql`, `mysql`, `sqlite`, …) gating dialect-sensitive rules like `SQLA-H206`. |
-| `naming_convention` | `map` | `{}` | The constraint `naming_convention` the project uses, informing rules like `SQLA-H106`/`SQLA-H107`. |
 | `diagnostics.select` | `string[]` | `["all"]` | Diagnostic codes (or `all`) to enable. |
 | `diagnostics.ignore` | `string[]` | `[]` | Diagnostic codes to disable, applied after `select`. |
 | `diagnostics.severity` | `map` | `{}` | Per-code severity override, e.g. `{ "SQLA-H205" = "warning" }`. |
@@ -199,7 +198,6 @@ The resolved config the server holds in memory has this shape. It is the single 
   "model_paths": ["models"],
   "alembic_path": "migrations",
   "target_dialect": "postgresql",
-  "naming_convention": { "ix": "ix_%(column_0_label)s" },
   "diagnostics": {
     "select": ["all"],
     "ignore": ["SQLA-H205"],
@@ -268,4 +266,5 @@ Target: **100% of this spec's behavior is covered.** Every `REQ-CFG-NN` maps to 
 
 ## 12. Changelog
 
+- **2026-06-18** — v0.2: removed the `naming_convention` config key. The naming convention is now read **only from the resolved declarative base's `MetaData`** in code ([E30](E30-extraction-and-indexing.md)); `SQLA-H106`/`SQLA-H107` and the F11 scaffold no longer consult config. Trade-off: a project that sets its convention in Alembic's `env.py` rather than on the base is no longer seen, so `SQLA-H107` may false-positive there — disable the rule or use `# noqa` (see [F02](../features/F02-best-practice-lints.md) §10).
 - **2026-06-17** — Initial draft: three-source per-key config, model/Alembic auto-discovery, the key reference, the `SQLA-<SEV><CLASS><NN>` scheme with default-on policy, `# noqa` suppression and the `SQLA-W901` meta-finding, and config-watch re-resolution.

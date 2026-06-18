@@ -2,7 +2,7 @@
 
 > **Status:** Draft
 >
-> **Version:** 0.1   ·   **Last updated:** 2026-06-17
+> **Version:** 0.2   ·   **Last updated:** 2026-06-18
 >
 > **Purpose:** The quick fixes the server offers to repair a SQLAlchemy finding — generate a `__tablename__`, fix a `back_populates`, add a missing foreign-key column, modernize a `backref` — and the rule that every edit is byte-identical to what `check --fix` applies.
 >
@@ -430,9 +430,10 @@ The §12.2 scenarios, written Given/When/Then, are this feature's acceptance cri
 
 ## 15. Cross-References
 
-- **Depends on:** [constitution](../constitution.md) — P1 (static analysis), P4 (no edit over a guess), P5 (companion, not replacement), and the §4.6 words-not-color rule the action titles honor; [E07-data-model](../foundations/E07-data-model.md) — the model/column/relationship facts and the index the edits resolve against; [E30-extraction-and-indexing](../foundations/E30-extraction-and-indexing.md) — the base/forward-ref/type resolution several fixes rely on; [E15-app-config](../foundations/E15-app-config.md) — the `naming_convention` key the `SQLA-H107` fix scaffolds; [E17-testing](../foundations/E17-testing.md) — the per-code fixtures and the [REQ-TST-05](../foundations/E17-testing.md#6-conventions) fix-parity rule this feature is bound to.
+- **Depends on:** [constitution](../constitution.md) — P1 (static analysis), P4 (no edit over a guess), P5 (companion, not replacement), and the §4.6 words-not-color rule the action titles honor; [E07-data-model](../foundations/E07-data-model.md) — the model/column/relationship facts and the index the edits resolve against; [E30-extraction-and-indexing](../foundations/E30-extraction-and-indexing.md) — the base/forward-ref/type resolution several fixes rely on; [E15-app-config](../foundations/E15-app-config.md) — the diagnostics config that gates which findings (and thus which fixes) are active; the `SQLA-H107` scaffold inserts a conventional default `naming_convention` map (read from code, not config); [E17-testing](../foundations/E17-testing.md) — the per-code fixtures and the [REQ-TST-05](../foundations/E17-testing.md#6-conventions) fix-parity rule this feature is bound to.
 - **Related:** [F01-orm-correctness-diagnostics](F01-orm-correctness-diagnostics.md) — the correctness findings (`SQLA-W101`/`W201`/`W402`/`W403`/`H406`/`H407`/`W409`) these fixes resolve; [F02-best-practice-lints](F02-best-practice-lints.md) — the best-practice findings (`SQLA-H106`/`H107`/`H202`/`W203`/`H205`/`W304`/`W305`/`W413`/`W501`/`W502`/`W504`/`I505`) these fixes resolve; [F14-cli-linter](F14-cli-linter.md) — the `check --fix` front-end that shares this fix engine; [F07-rename](F07-rename.md) — the workspace rename capability, distinct from these fixed edits; [E29-e2e-testing](../foundations/E29-e2e-testing.md) — the harness and the relink→empty-publish journey that proves an applied fix clears its finding.
 
 ## 16. Changelog
 
+- **2026-06-18** — v0.2: the `SQLA-H107` scaffold (REQ-CA-17) now inserts a conventional default `naming_convention` map; the dropped `naming_convention` config key ([E15](../foundations/E15-app-config.md) v0.2) is no longer a source. Reworded the E15 dependency.
 - **2026-06-17** — Initial draft. Ported the four legacy code actions (generate `__tablename__`, fix `back_populates`, add FK column, proactive `back_populates`) to the `SQLA-` codes, added a quick fix per fixable F01/F02 lint, mapped each fix to the diagnostic it resolves, and pinned the byte-identical parity with `check --fix` ([E17 REQ-TST-05](../foundations/E17-testing.md#6-conventions)). Added the quick-fix menu and generate-`__tablename__` before/after mockups, the decision flowchart, the data shapes for single- and two-file edits, and the testing, E2E, and non-functional sections.
