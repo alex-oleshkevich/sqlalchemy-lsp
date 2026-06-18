@@ -1,6 +1,8 @@
 # Agent Instructions
 
-This project uses **bd** (beads) for issue tracking. Run `bd prime` for full workflow context.
+This file is the **single source of truth** for working on `sqlalchemy-lsp`. `CLAUDE.md` only points here.
+
+`sqlalchemy-lsp` is a Rust language server that gives editors SQLAlchemy- and Alembic-aware intelligence, plus a matching headless CLI. It is spec-driven and runs as a *companion* to a general Python LSP.
 
 ## Specifications
 
@@ -11,15 +13,29 @@ This project is spec-driven — the docs in `specs/` are the source of truth for
 - **Spec-first for new features** — before building a new feature, create its spec (copy `specs/features/F00-template.md`), get it reviewed, then implement.
 - **Keep specs in sync** — when you change a feature's behavior, update its spec in the same change. Specs must not drift from code.
 
-## Quick Reference
+## Build & Test
+
+Implementation has not started yet — there is no `Cargo.toml` until the M0 milestone (beads epic `sqlalchemy-lsp-cl2`). Once scaffolded, the `Justfile` wraps the standard commands:
 
 ```bash
-bd ready              # Find available work
-bd show <id>          # View issue details
-bd update <id> --claim  # Claim work atomically
-bd close <id>         # Complete work
-bd dolt push          # Push beads data to remote
+just build      # cargo build
+just test       # cargo test (unit + integration)
+just lint       # cargo clippy --all-targets -- -D warnings
+just fmt        # cargo fmt
+just check      # fmt --check + clippy + test
+# end-to-end (needs the built binary):
+pytest tests/e2e
 ```
+
+## Architecture Overview
+
+One Rust binary speaks LSP over stdio (`sqlalchemy-lsp lsp --stdio`) and backs a headless `check` CLI from the same engine. It parses Python with tree-sitter, extracts SQLAlchemy/Alembic facts per file (Pass 1), and links them into a `DashMap` workspace index (Pass 2, debounced). Every feature is a pure function reading that index. Full detail: [`specs/foundations/E01-architecture.md`](specs/foundations/E01-architecture.md).
+
+## Conventions & Patterns
+
+- Coding conventions, the error/resilience contract, layering rules, and the never-log-to-stdout rule live in [`specs/foundations/E16-conventions.md`](specs/foundations/E16-conventions.md).
+- Governing principles (P1–P6), the diagnostic-code scheme (`SQLA-<SEV><CLASS><NN>`), and the example cast live in [`specs/constitution.md`](specs/constitution.md).
+- Never commit, push, or stage without an explicit instruction from the user.
 
 ## Non-Interactive Shell Commands
 
