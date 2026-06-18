@@ -24,14 +24,14 @@ use tower_lsp_server::{
         FileChangeType, FileSystemWatcher, FullDocumentDiagnosticReport, GlobPattern,
         GotoDefinitionResponse, InitializeParams, InitializeResult, InitializedParams,
         MessageType, OneOf,
-        PositionEncodingKind, Registration, RelatedFullDocumentDiagnosticReport,
+        PositionEncodingKind, ReferenceParams, Registration, RelatedFullDocumentDiagnosticReport,
         ServerCapabilities, ServerInfo, SignatureHelpOptions, SignatureHelpParams,
         TextDocumentSyncCapability, TextDocumentSyncKind, Uri,
     },
 };
 
 use crate::{
-    features::{completion, definition, hover, signature_help},
+    features::{completion, definition, hover, references, signature_help},
     pipeline::{run_pass1, run_pass2},
     state::WorkspaceState,
     util::positions::apply_changes,
@@ -199,6 +199,7 @@ impl LanguageServer for Backend {
                     work_done_progress_options: Default::default(),
                 }),
                 definition_provider: Some(OneOf::Left(true)),
+                references_provider: Some(OneOf::Left(true)),
                 hover_provider: Some(tower_lsp_server::ls_types::HoverProviderCapability::Simple(true)),
                 ..ServerCapabilities::default()
             },
@@ -400,6 +401,16 @@ impl LanguageServer for Backend {
         let source = self.state.file_sources.get(&uri).map(|s| s.clone()).unwrap_or_default();
         let loc = definition::resolve_definition(&uri, &source, pos, &self.state);
         Ok(loc.map(GotoDefinitionResponse::Scalar))
+    }
+
+    // ── Find references ───────────────────────────────────────────────────────
+
+    async fn references(&self, params: ReferenceParams) -> Result<Option<Vec<tower_lsp_server::ls_types::Location>>> {
+        let uri = params.text_document_position.text_document.uri;
+        let pos = params.text_document_position.position;
+        let include_decl = params.context.include_declaration;
+        let locs = references::provide_references(&uri, pos, include_decl, &self.state);
+        Ok(if locs.is_empty() { None } else { Some(locs) })
     }
 }
 
