@@ -15,7 +15,8 @@ use tower_lsp_server::{
     ls_types::{
         CodeActionKind, CodeActionOptions, CodeActionProviderCapability,
         CompletionOptions, CompletionParams, CompletionResponse,
-        GotoDefinitionParams, DiagnosticOptions, DiagnosticServerCapabilities,
+        GotoDefinitionParams, DiagnosticOptions, DiagnosticServerCapabilities, Hover,
+        HoverParams,
         DidChangeTextDocumentParams, DidChangeWatchedFilesParams,
         DidChangeWatchedFilesRegistrationOptions, DidCloseTextDocumentParams,
         DidOpenTextDocumentParams, DidSaveTextDocumentParams,
@@ -30,7 +31,7 @@ use tower_lsp_server::{
 };
 
 use crate::{
-    features::{completion, definition, signature_help},
+    features::{completion, definition, hover, signature_help},
     pipeline::{run_pass1, run_pass2},
     state::WorkspaceState,
     util::positions::apply_changes,
@@ -198,6 +199,7 @@ impl LanguageServer for Backend {
                     work_done_progress_options: Default::default(),
                 }),
                 definition_provider: Some(OneOf::Left(true)),
+                hover_provider: Some(tower_lsp_server::ls_types::HoverProviderCapability::Simple(true)),
                 ..ServerCapabilities::default()
             },
             offset_encoding: if use_utf8 { Some("utf-8".to_string()) } else { None },
@@ -380,6 +382,14 @@ impl LanguageServer for Backend {
         let pos = params.text_document_position_params.position;
         let source = self.state.file_sources.get(&uri).map(|s| s.clone()).unwrap_or_default();
         Ok(signature_help::provide_signature_help(&uri, &source, pos, &self.state))
+    }
+
+    // ── Hover ─────────────────────────────────────────────────────────────────
+
+    async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
+        let uri = params.text_document_position_params.text_document.uri;
+        let pos = params.text_document_position_params.position;
+        Ok(hover::provide_hover(&uri, pos, &self.state))
     }
 
     // ── Go-to-definition ──────────────────────────────────────────────────────
