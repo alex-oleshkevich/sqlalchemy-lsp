@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use tower_lsp_server::{
     Client, LanguageServer,
     jsonrpc::Result,
@@ -7,13 +9,20 @@ use tower_lsp_server::{
     },
 };
 
+use crate::state::WorkspaceState;
+
 pub struct Backend {
     client: Client,
+    #[allow(dead_code)]
+    state: Arc<WorkspaceState>,
 }
 
 impl Backend {
     pub fn new(client: Client) -> Self {
-        Self { client }
+        Self {
+            client,
+            state: Arc::new(WorkspaceState::new()),
+        }
     }
 }
 
