@@ -2,7 +2,7 @@
 
 > **Status:** Draft
 >
-> **Version:** 0.1   ·   **Last updated:** 2026-06-17
+> **Version:** 0.2   ·   **Last updated:** 2026-06-18
 >
 > **Purpose:** The command-line surface — one binary that serves the LSP, and runs the *same* diagnostics engine headless as a CI-friendly linter with ruff/mypy-style output, plus `stats` and `schema` reporting subcommands.
 >
@@ -20,9 +20,9 @@ The point of `check` is that it can't disagree with your editor. It builds the s
 
 This spec covers:
 
-- the subcommand surface — `lsp`, `check` (with `--fix`), `stats`, and `schema`;
-- the `check` output contract — nine `--output-format` renderers and the ruff/mypy-style summary;
-- the code filter (`--select`/`--ignore`), `# noqa` suppression, exit codes, and `--exit-zero`;
+- the subcommand surface — `lsp`, `check` (with `--fix` and `--fix --unsafe`), `stats`, and `schema`;
+- the `check` output contract — nine `--reporter` renderers and the ruff/mypy-style summary, all rendered from the one [E16](../foundations/E16-conventions.md) diagnostic model;
+- the code filter (`--select`/`--ignore`, with [E15](../foundations/E15-app-config.md) class tokens and presets), `# noqa` suppression, exit codes, and `--exit-zero`;
 - the `stats` workspace summary and the `schema` subcommand (deferring diagram detail to [F12](F12-schema-visualization.md)).
 
 ## 2. Non-Goals / Out of Scope
@@ -30,8 +30,8 @@ This spec covers:
 - **The diagnostic catalog** — codes, severities, and firing conditions belong to [F01](F01-orm-correctness-diagnostics.md)/[F02](F02-best-practice-lints.md)/[F13](F13-alembic-support.md); `check` is a consumer.
 - **Config resolution** — sources, per-key precedence, and discovery are [E15](../foundations/E15-app-config.md)'s; `check` reads the resolved config and only overrides it from flags.
 - **The schema diagram itself** — the Mermaid/Graphviz/ASCII renderers and the `showSchema` execute-command are [F12](F12-schema-visualization.md)'s; this spec only declares the `schema` subcommand that drives them.
-- **The fix edits** — the deterministic `WorkspaceEdit`s `--fix` applies are [F11](F11-code-actions.md)'s; this spec applies them to disk and reuses them, never reinvents them.
-- **Non-deterministic fixes** — `check --fix` applies only the *deterministic* [F11](F11-code-actions.md) edits; ambiguous ones are left for a human, exactly as the editor leaves them (P4).
+- **The fix edits** — the `WorkspaceEdit`s `--fix` applies are [F11](F11-code-actions.md)'s; this spec applies them to disk and reuses them, never reinvents them.
+- **The Safe/Unsafe classification** — which fixes are **Safe** and which are **Unsafe** is the [E16](../foundations/E16-conventions.md) `FixKind` enum, set per code in the [F11](F11-code-actions.md) catalog; `check` reads that classification to decide what `--fix` versus `--fix --unsafe` applies, but it never assigns it.
 - **The LSP protocol conduct** — capabilities, encoding negotiation, and the pipeline are [E01](../foundations/E01-architecture.md)'s; the `lsp` subcommand only launches it.
 
 ## 3. Background & Rationale
@@ -42,13 +42,17 @@ The design choice that makes this safe is "one engine, two front-ends" — the c
 
 The output contract mirrors ruff and mypy deliberately. A team already gating on ruff has wiring — GitHub annotations, a JUnit ingest, a pre-commit hook — that should consume our output unchanged. So the line format, the summary wording, the exit codes, and the nine renderer names all match what those integrations already expect. Familiar is correct here.
 
+Two more habits come from Biome. First, **fixes split into Safe and Unsafe.** A Safe fix is one we'd happily apply unattended — it preserves behavior and never guesses; an Unsafe one might change behavior or pick one of several valid repairs, so it waits for you to ask. `--fix` applies only the Safe ones; `--fix --unsafe` opts into the rest. The split itself is the [E16](../foundations/E16-conventions.md) `FixKind`, assigned per code in the [F11](F11-code-actions.md) catalog — `check` just reads it. Second, **every reporter renders from one model.** The nine output shapes are not nine hand-written formatters; each is a pure function of the same [E16](../foundations/E16-conventions.md) diagnostic — its code, severity, message, location, structured **advices**, and tags. The `full` format's source frame and `help:`/`note:` lines are the E16 `CodeFrame` and `Note` advices laid out, not text the CLI invents.
+
 ## 4. Concepts & Definitions
 
 - **Finding** — one diagnostic result: a `SQLA-` code, a message, a file, a 1-based location, a resolved severity, and an optional fix. The CLI prints findings; the server publishes them.
 - **CLI/server parity** — the rule that `check` and the editor server emit identical findings from one engine. (Canonical definition in [glossary](../glossary.md).)
 - **`# noqa`** — an inline suppression comment honored identically by the CLI and the server. (Canonical definition in [glossary](../glossary.md).)
-- **Output format** — one of nine renderers (§5.5); the format is a pure function of the same `Finding` set.
-- **Deterministic fix** — a [F11](F11-code-actions.md) edit that is provably correct with no human choice; the only kind `--fix` applies.
+- **Output format / reporter** — one of nine renderers (§5.5), chosen with `--reporter` (alias `--output-format`); each is a pure function of the same [E16](../foundations/E16-conventions.md) diagnostic set.
+- **Safe fix** — a [F11](F11-code-actions.md) edit tagged `FixKind::Safe` in [E16](../foundations/E16-conventions.md): behavior-preserving with no human choice. The kind `--fix` applies.
+- **Unsafe fix** — a [F11](F11-code-actions.md) edit tagged `FixKind::Unsafe`: it may change behavior or pick among valid repairs. Applied only under `--fix --unsafe`.
+- **Advice** — a structured attachment on an [E16](../foundations/E16-conventions.md) diagnostic — a `CodeFrame` (the source snippet) or a `Note` (a `help:`/`note:` line). Reporters render advices; they never compose them by hand.
 
 ## 5. Detailed Specification
 
@@ -95,42 +99,49 @@ A path that is a single file still resolves config and links against the *enclos
 
 You scope which checks fire. The flags mirror the config keys exactly ([E15](../foundations/E15-app-config.md)) so a `pyproject.toml` rule and a CLI flag mean the same thing.
 
-**REQ-CLI-04 — `--select` and `--ignore` mirror the diagnostics config; the CLI overrides config.**
+**REQ-CLI-04 — `--select` and `--ignore` mirror the diagnostics config — codes, class tokens, and presets; the CLI overrides config.**
 
-`--select` names the `SQLA-` codes (or `all`) to enable; `--ignore` names codes to drop, applied after `select` — identical resolution to the config, but the CLI flags win over the resolved config when both speak. An unknown code is a config error (exit 2), never a silent skip, so a typo can't quietly disable a check.
+`--select` names what to enable; `--ignore` names what to drop, applied after `select` — identical resolution to the config ([E15 REQ-CFG-12](../foundations/E15-app-config.md)), but the CLI flags win over the resolved config when both speak. Each flag accepts all three [E15](../foundations/E15-app-config.md) target kinds, broadest to most specific: a **preset** (`recommended`, `all`, `none`), a **class token** (the severity letter dropped and the rule number replaced with `xx`, e.g. `SQLA-3xx` for every foreign-key rule), or a **specific code**. Specificity decides overlaps — a specific code beats a class token beats a preset — exactly as the config resolves it. An unknown code is a config error (exit 2), never a silent skip, so a typo can't quietly disable a check.
 
 ```text
 # run only the FK and chain rules
 sqlalchemy-lsp check --select SQLA-E301,SQLA-W303,SQLA-W701
 
+# turn on the whole catalog, then drop every relationship rule
+sqlalchemy-lsp check --select all --ignore SQLA-4xx
+
 # run everything except the two hint-heavy lints
 sqlalchemy-lsp check --ignore SQLA-H205,SQLA-H703
 ```
 
-Because every code carries the `SQLA-` namespace, a filter never collides with a co-resident ruff/flake8 code. Codes are parsed against the diagnostics catalog — the single source of valid spellings, shared by config and CLI.
+Because every code carries the `SQLA-` namespace, a filter never collides with a co-resident ruff/flake8 code. Codes, class tokens, and presets are all parsed against the diagnostics catalog — the single source of valid spellings, shared by config and CLI.
 
 **REQ-CLI-05 — `check` honors `# noqa` suppressions headlessly.**
 
 The CLI honors the same inline suppressions the server does ([E15](../foundations/E15-app-config.md)): `# noqa: SQLA-W303` silences one code on a line, bare `# noqa` silences every finding on the line, and `# noqa: file` silences the whole file. A suppression that matched nothing is itself reported as `SQLA-W901` unused-noqa, so dead ignores get cleaned up in CI just as in the editor. The `SQLA-` namespace means `# noqa: SQLA-W303` never touches a flake8/ruff `# noqa: E501` on the same line.
 
-### 5.4 `sqlalchemy-lsp check --fix` — apply the deterministic fixes
+### 5.4 `sqlalchemy-lsp check --fix` — apply the Safe fixes (and, on request, the Unsafe ones)
 
-`--fix` turns the linter into a fixer: it runs the checks, applies the safe edits to disk, and re-reports what remains.
+`--fix` turns the linter into a fixer: it runs the checks, applies the **Safe** edits to disk, and re-reports what remains. `--fix --unsafe` goes one step further and applies the **Unsafe** edits too, for when you want the riskier repairs in one pass and will eyeball the diff after.
 
-**REQ-CLI-06 — `--fix` applies the deterministic F11 edits to disk, byte-identical to the editor.**
+**REQ-CLI-06 — `--fix` applies Safe F11 edits; `--fix --unsafe` adds the Unsafe ones; both byte-identical to the editor.**
 
-`check --fix` runs the normal pass, then applies each finding's paired [F11](F11-code-actions.md) edit that is *deterministic* — provably correct with no human choice (P4): `backref`→`back_populates`, `declarative_base()`→`DeclarativeBase`, add `timezone=True`, wrap a mutable default in a callable, add `Optional[...]`, add `Mapped[...]`, generate a `__tablename__`. Ambiguous fixes are skipped and still reported. The edits the CLI writes are byte-identical to the editor's quick-fix edits — both come from the one [F11](F11-code-actions.md) action layer ([E17 REQ-TST-05](../foundations/E17-testing.md) extends parity to `--fix`). After fixing, the summary appends `Fixed K problems; R remaining.` (§5.6).
+`check --fix` runs the normal pass, then applies each finding's paired [F11](F11-code-actions.md) edit that the [E16](../foundations/E16-conventions.md) `FixKind` marks **Safe** — behavior-preserving, no human choice — and skips every **Unsafe** one. Adding `--unsafe` applies the Unsafe fixes in the same pass. The classification is per code, set in the [F11](F11-code-actions.md) catalog; `check` only reads it. Any fix not applied this run is still reported. The edits the CLI writes are byte-identical to the editor's quick-fix edits — both come from the one [F11](F11-code-actions.md) action layer ([E17 REQ-TST-05](../foundations/E17-testing.md) extends parity to `--fix`, and the parity covers both `FixKind`s). After fixing, the summary reports what was fixed, what remains, and how many of the remainder are Unsafe-fixable (§5.6).
+
+`--unsafe` has no effect without `--fix`; passing it on a plain `check` is a usage error (exit 2). When no Unsafe fixes are available, `--fix --unsafe` behaves exactly like `--fix`.
 
 ### 5.5 The `check` output contract
 
-You pick an output shape with `--output-format`; the default is `concise`. The shapes match ruff's so existing pipeline integrations work unchanged. The exact rendered layout of the human-facing shapes is the §6 mockup contract.
+You pick an output shape with `--reporter` (the Biome-style name; `--output-format` is an accepted alias); the default is `concise`. The shapes match ruff's so existing pipeline integrations work unchanged. The exact rendered layout of the human-facing shapes is the §6 mockup contract.
 
-**REQ-CLI-07 — `--output-format` selects one of nine renderers.**
+Crucially, none of these is a bespoke formatter. Each reporter is a pure function of the one [E16](../foundations/E16-conventions.md) diagnostic model — `code`, `severity`, `message`, `location`, the structured **advices**, and tags. The `full` reporter's source frame, `help:` line, and `note:` line are the diagnostic's `CodeFrame` and `Note` advices laid out for the terminal, not text the CLI hand-assembles. Add an advice in the engine once and every reporter that shows advices picks it up.
+
+**REQ-CLI-07 — `--reporter` selects one of nine renderers, each rendered from the E16 model.**
 
 | Format | Shape | Best for |
 |---|---|---|
 | `concise` | One line per finding: `path:line:col: CODE message` | The terminal, quick scans (default) |
-| `full` | A source-snippet block per finding, with caret underline, `help:` and `note:` lines | Reading a finding in context |
+| `full` | A source-snippet block per finding, with caret underline, `help:` and `note:` lines — rendered from the E16 `CodeFrame`/`Note` advices | Reading a finding in context |
 | `json` | A pretty-printed JSON array of finding objects | Scripts, dashboards |
 | `json-lines` | NDJSON — one finding object per line | Streaming, large result sets |
 | `grouped` | Findings grouped under a per-file header, indented | Reading many findings across files |
@@ -139,7 +150,7 @@ You pick an output shape with `--output-format`; the default is `concise`. The s
 | `junit` | JUnit XML — each finding a `<testcase>` failure | Generic CI test-report ingestion |
 | `pylint` | One line per finding: `path:line: [CODE] message` | Pylint-compatible tooling |
 
-`concise`, `full`, `grouped`, and `pylint` are human-facing; `json`, `json-lines`, `github`, `gitlab`, and `junit` are machine-facing. All nine are computed from the same `Finding` set — the format is purely a renderer.
+`concise`, `full`, `grouped`, and `pylint` are human-facing; `json`, `json-lines`, `github`, `gitlab`, and `junit` are machine-facing. All nine are computed from the same [E16](../foundations/E16-conventions.md) diagnostic set — the reporter is purely a renderer, so the editor and the CLI can never describe the same finding differently ([E17 REQ-TST-05](../foundations/E17-testing.md)).
 
 **REQ-CLI-08 — The concise line format is exact.**
 
@@ -157,18 +168,23 @@ After the findings, `check` prints a summary. When the run is clean:
 All checks passed! (checked 42 files)
 ```
 
-When findings printed, an optional fixable-hint line (only when at least one finding is fixable), then the count line — zero-count severity categories omitted:
+When findings printed, up to two fixable-hint lines (each shown only when that kind of fix exists), then the count line — zero-count severity categories omitted. The hints split by `FixKind` the way ruff does: Safe fixes point at `--fix`, Unsafe ones at `--fix --unsafe`:
 
 ```text
 [*] 2 fixable with the `--fix` option.
+[*] 1 fixable with `--fix --unsafe`.
 Found 4 problems (3 warnings, 1 info) in 3 files (checked 42 files).
 ```
 
-The categories are `errors`, `warnings`, `info`, `hints`, in that order, each shown only when its count is non-zero. After `--fix`, the count line is followed by the fix result:
+The first hint counts the Safe fixes, the second the Unsafe ones; either line is omitted when its count is zero, so a run with only Safe fixes shows just the first. The categories are `errors`, `warnings`, `info`, `hints`, in that order, each shown only when its count is non-zero.
+
+After `--fix`, the count line is followed by the fix result. It names what was fixed, how many findings remain, and — when any of the remainder are Unsafe-fixable — how many the user could clear with `--fix --unsafe`:
 
 ```text
-Fixed 2 problems; 2 remaining.
+Fixed 2 problems; 3 remaining (1 fixable with --unsafe).
 ```
+
+When no remaining finding is Unsafe-fixable, the parenthetical is dropped: `Fixed 2 problems; 2 remaining.`. After `--fix --unsafe`, the Unsafe fixes have already been applied, so the parenthetical never appears.
 
 The summary is omitted entirely for the machine formats (`json`, `json-lines`, `github`, `gitlab`, `junit`). Per the constitution's content rule, the result is carried in *words*, never by color alone ([constitution §6](../constitution.md#6-visualization-style-guide)). Color follows severity on a TTY only and is suppressed when `NO_COLOR` is set or the format is a machine one.
 
@@ -213,10 +229,11 @@ models/post.py:22:5: SQLA-W402 back_populates mismatch: `Post.author` points to 
 models/user.py:9:5: SQLA-W101 model `User` has no __tablename__
 models/tag.py:7:1: SQLA-I505 `import sqlalchemy as sql`; prefer `sa`
 [*] 2 fixable with the `--fix` option.
+[*] 1 fixable with `--fix --unsafe`.
 Found 4 problems (3 warnings, 1 info) in 3 files (checked 42 files).
 ```
 
-States: findings (above, exit 1) · clean (`All checks passed! (checked 42 files)`, exit 0) · `--exit-zero` (findings print, exit forced to 0) · `NO_COLOR`/non-TTY (identical text, no color).
+States: findings (above, exit 1) · only-Safe-fixable (the `--fix --unsafe` hint is omitted) · clean (`All checks passed! (checked 42 files)`, exit 0) · `--exit-zero` (findings print, exit forced to 0) · `NO_COLOR`/non-TTY (identical text, no color).
 
 ### 6.2 `sqlalchemy-lsp check` — clean run
 
@@ -231,22 +248,30 @@ States: clean (above) · `--output-format json` with zero findings (an empty arr
 
 ### 6.3 `sqlalchemy-lsp check --fix` — after fixing
 
-`--fix` applies the deterministic edits to disk, then reports what was fixed and what remains. The count line precedes the fix result.
+`--fix` applies the **Safe** edits to disk, then reports what was fixed and what remains. The count line precedes the fix result. Because one Unsafe fix is still on the table here, the result line points the user at `--fix --unsafe`.
 
 ```
 $ sqlalchemy-lsp check --fix
 Found 4 problems (3 warnings, 1 info) in 3 files (checked 42 files).
-Fixed 2 problems; 2 remaining.
+Fixed 2 problems; 3 remaining (1 fixable with --unsafe).
 ```
 
-States: some fixed, some remain (above) · all fixed (`Fixed N problems; 0 remaining.`, exit 0) · nothing fixable (the `Fixed` line reads `Fixed 0 problems; N remaining.`).
-
-### 6.4 `sqlalchemy-lsp check --output-format full` — the caret block
-
-One source-snippet block per finding: a `-->` pointer to `file:line:col`, a numbered gutter, `^^^` carets under the offending span, a `help:` line, and a `note:` suppression hint. For reading a finding in context.
+Running it again with `--unsafe` clears the Unsafe fix too, and the parenthetical is gone:
 
 ```
-$ sqlalchemy-lsp check --output-format full
+$ sqlalchemy-lsp check --fix --unsafe
+Found 2 problems (2 warnings) in 2 files (checked 42 files).
+Fixed 1 problem; 1 remaining.
+```
+
+States: Safe fixed, an Unsafe one remains (top, the `--unsafe` parenthetical shows) · `--fix --unsafe` clears the Unsafe fix (bottom, no parenthetical) · all fixed (`Fixed N problems; 0 remaining.`, exit 0) · nothing fixable (the `Fixed` line reads `Fixed 0 problems; N remaining.`).
+
+### 6.4 `sqlalchemy-lsp check --reporter full` — the caret block
+
+One source-snippet block per finding: a `-->` pointer to `file:line:col`, a numbered gutter, `^^^` carets under the offending span, a `help:` line, and a `note:` suppression hint. The frame and the two trailing lines are the diagnostic's [E16](../foundations/E16-conventions.md) `CodeFrame` and `Note` advices, laid out for the terminal — not text this reporter composes. For reading a finding in context.
+
+```
+$ sqlalchemy-lsp check --reporter full
 SQLA-W303 FK type mismatch
   --> models/post.py:14:5
    |
@@ -324,7 +349,7 @@ flowchart TB
 
 ## 8. Data Shapes
 
-The `json` and `json-lines` formats serialize each `Finding` to this object. Rows and columns are **1-based**, matching ruff; `end_location` is exclusive. `fix` carries the deterministic [F11](F11-code-actions.md) edit when one exists (the same edit `--fix` applies, REQ-CLI-06), or `null` when the finding has no automatic fix.
+The `json` and `json-lines` formats serialize each [E16](../foundations/E16-conventions.md) diagnostic to this object. Rows and columns are **1-based**, matching ruff; `end_location` is exclusive. `fix` carries the [F11](F11-code-actions.md) edit when one exists (the same edit `--fix`/`--fix --unsafe` applies, REQ-CLI-06), or `null` when the finding has no automatic fix; its `applicability` is the [E16](../foundations/E16-conventions.md) `FixKind` (`"safe"` or `"unsafe"`), so a consumer can tell which `--fix` mode would clear it. `advices` carries the structured `CodeFrame`/`Note` attachments the `full` reporter lays out.
 
 ```json
 {
@@ -334,7 +359,8 @@ The `json` and `json-lines` formats serialize each `Finding` to this object. Row
   "end_location": { "row": 14, "column": 14 },
   "filename": "models/post.py",
   "severity": "warning",
-  "fix": null
+  "fix": { "applicability": "safe", "title": "Add `Optional[…]`" },
+  "advices": []
 }
 ```
 
@@ -351,14 +377,15 @@ pub enum Cli {
 
 pub struct CheckArgs {
     pub paths: Vec<PathBuf>,
-    pub select: Vec<DiagCode>,   // mirrors diagnostics.select; CLI overrides config
-    pub ignore: Vec<DiagCode>,   // mirrors diagnostics.ignore
-    pub output_format: OutputFormat,
+    pub select: Vec<DiagTarget>,  // codes, class tokens, or presets; mirrors diagnostics.select; CLI overrides config
+    pub ignore: Vec<DiagTarget>,  // mirrors diagnostics.ignore
+    pub reporter: Reporter,       // --reporter, alias --output-format
     pub fix: bool,
+    pub unsafe_: bool,            // --unsafe; only meaningful with --fix
     pub exit_zero: bool,
 }
 
-pub enum OutputFormat {
+pub enum Reporter {
     Concise, Full, Json, JsonLines, Grouped, Github, Gitlab, Junit, Pylint,
 }
 
@@ -384,7 +411,8 @@ The findings below are the broken `clean-blog` from §6: an FK type mismatch and
     "end_location": { "row": 14, "column": 14 },
     "filename": "models/post.py",
     "severity": "warning",
-    "fix": null
+    "fix": null,
+    "advices": []
   }
 ]
 ```
@@ -429,13 +457,17 @@ In CI, [F16](F16-release-ci.md) runs `sqlalchemy-lsp check --output-format githu
 - `NO_COLOR` set, or output piped to a non-TTY → color suppressed; the text is otherwise identical.
 - A machine format with zero findings → an empty but well-formed document (`[]`, no annotations, an empty JUnit suite), never the summary line.
 - A `# noqa` that matched nothing → reported as `SQLA-W901` unused-noqa, headlessly, just as in the editor (REQ-CLI-05).
-- `--fix` over a file with no deterministic fixes → nothing written; the summary reads `Fixed 0 problems; N remaining.`.
+- `--ignore SQLA-4xx` (a class token) → every relationship rule is dropped at once; specificity still lets a later `--select SQLA-W402` re-enable one ([E15 REQ-CFG-12](../foundations/E15-app-config.md)).
+- `--fix` over a file whose only fixes are Unsafe → nothing written; the summary reads `Fixed 0 problems; N remaining (M fixable with --unsafe).` to point the user at the other mode.
+- `--fix` over a file with no fixable findings at all → nothing written; the summary reads `Fixed 0 problems; N remaining.`.
+- `--unsafe` passed without `--fix` → usage error, exit 2; `--unsafe` only modifies `--fix`.
+- `--fix --unsafe` where no Unsafe fix exists → behaves exactly like `--fix`; nothing extra is applied.
 - `schema --output FILE` where the path is unwritable → exit 2 with an I/O error; no partial file left behind (§13.1).
 - A broken or partial source file → the engine degrades to partial findings, never crashes (P3); `check` reports what it could analyze.
 
 ## 11. Testing
 
-`check` is the headless twin of the LSP server, so its test plan is built around one rule above all: the CLI and the server must publish identical findings, and `check --fix` must match editor quick-fixes. The renderers are snapshot-tested byte-for-byte; categories, tools, and shared fixtures defer to [E17-testing](../foundations/E17-testing.md).
+`check` is the headless twin of the LSP server, so its test plan is built around one rule above all: the CLI and the server must publish identical findings, and `check --fix` must match editor quick-fixes — for both `FixKind`s. The renderers are snapshot-tested byte-for-byte against the one [E16](../foundations/E16-conventions.md) model; categories, tools, and shared fixtures defer to [E17-testing](../foundations/E17-testing.md).
 
 ### 11.1 Scope & coverage
 
@@ -452,11 +484,15 @@ Each row is a behavior under test. The renderer rows snapshot each `--output-for
 | **Parity:** `check` and the server publish the identical finding set (code, file, range) | integration | [bad-fk](../foundations/E17-testing.md#bad-fk) | REQ-CLI-03 |
 | `--select`/`--ignore` resolve like the config and override it; an unknown code → exit 2 | unit | [clean-blog](../foundations/E17-testing.md#clean-blog) | REQ-CLI-04, REQ-CLI-10 |
 | `# noqa: SQLA-…` suppresses headlessly; an unused suppression → `SQLA-W901` | integration | [bad-fk](../foundations/E17-testing.md#bad-fk) | REQ-CLI-05 |
-| `check --fix` writes the deterministic F11 edits to disk; ambiguous skipped; edits byte-identical to the editor | integration | [backref-deprecated](../foundations/E17-testing.md#backref-deprecated) | REQ-CLI-06 |
-| Each of the nine `--output-format` renderers emits its exact documented shape | unit (snapshot) | [bad-fk](../foundations/E17-testing.md#bad-fk) | REQ-CLI-07 |
+| `check --fix` applies Safe F11 edits and skips Unsafe ones; edits byte-identical to the editor | integration | [backref-deprecated](../foundations/E17-testing.md#backref-deprecated) | REQ-CLI-06 |
+| `check --fix --unsafe` additionally applies the Unsafe edits; exit codes unchanged from `--fix` | integration | [backref-deprecated](../foundations/E17-testing.md#backref-deprecated) | REQ-CLI-06 |
+| `--unsafe` without `--fix` → exit 2 | unit | — | REQ-CLI-06 |
+| `--ignore SQLA-4xx` (class token) drops a whole diagnostic class; `--select all` enables the catalog | unit | [bad-fk](../foundations/E17-testing.md#bad-fk) | REQ-CLI-04 |
+| Each of the nine `--reporter` renderers emits its exact documented shape from the E16 model | unit (snapshot) | [bad-fk](../foundations/E17-testing.md#bad-fk) | REQ-CLI-07 |
+| The `full` reporter's frame + `help:`/`note:` render from the E16 `CodeFrame`/`Note` advices | unit (snapshot) | [bad-fk](../foundations/E17-testing.md#bad-fk) | REQ-CLI-07 |
 | A concise line is `rel-path:line:col: CODE message` with 1-based line/col | unit (snapshot) | [bad-fk](../foundations/E17-testing.md#bad-fk) | REQ-CLI-08 |
-| The summary reads `All checks passed!`/`Found T problems (…)`/`Fixed K; R remaining.`; categories with zero count omitted; omitted for machine formats | unit (snapshot) | [clean-blog](../foundations/E17-testing.md#clean-blog), [bad-fk](../foundations/E17-testing.md#bad-fk) | REQ-CLI-09 |
-| Exit 0 clean, 1 on any finding (incl. hint), 2 on bad code/config; `--exit-zero` forces 0 | integration | [clean-blog](../foundations/E17-testing.md#clean-blog), [bad-fk](../foundations/E17-testing.md#bad-fk) | REQ-CLI-10 |
+| The summary reads `All checks passed!`/`Found T problems (…)`; the Safe and Unsafe fixable hints split by `FixKind`; `Fixed K; R remaining (M fixable with --unsafe)`; zero-count categories omitted; omitted for machine formats | unit (snapshot) | [clean-blog](../foundations/E17-testing.md#clean-blog), [bad-fk](../foundations/E17-testing.md#bad-fk) | REQ-CLI-09 |
+| Exit 0 clean, 1 on any finding (incl. hint), 2 on bad code/config; `--exit-zero` forces 0; exit codes identical between `--fix` and `--fix --unsafe` | integration | [clean-blog](../foundations/E17-testing.md#clean-blog), [bad-fk](../foundations/E17-testing.md#bad-fk) | REQ-CLI-10 |
 | `stats` prints model/column/relationship/FK counts, heads, and finding-by-code counts; `--output-format json` matches | integration | [clean-blog](../foundations/E17-testing.md#clean-blog) | REQ-CLI-11 |
 | `schema` emits Mermaid/Graphviz/ASCII and writes `--output FILE` | integration | [clean-blog](../foundations/E17-testing.md#clean-blog) | REQ-CLI-12 |
 | A machine format with zero findings yields an empty, well-formed document | unit (snapshot) | [clean-blog](../foundations/E17-testing.md#clean-blog) | §10 |
@@ -474,10 +510,10 @@ Every load-bearing requirement maps to a test — this table is the proof.
 | REQ-CLI-01 | `req_cli_01_lsp_subcommand_speaks_stdio` |
 | REQ-CLI-02 | `req_cli_02_check_runs_pipeline_once` |
 | REQ-CLI-03 | `req_cli_03_check_and_server_publish_identical_findings` |
-| REQ-CLI-04 | `req_cli_04_select_ignore_override_config`, `req_cli_04_unknown_code_exits_two` |
+| REQ-CLI-04 | `req_cli_04_select_ignore_override_config`, `req_cli_04_class_token_and_preset_resolve`, `req_cli_04_unknown_code_exits_two` |
 | REQ-CLI-05 | `req_cli_05_noqa_honored_headlessly`, `req_cli_05_unused_noqa_reports_w901` |
-| REQ-CLI-06 | `req_cli_06_fix_applies_deterministic_edits_byte_identical` |
-| REQ-CLI-07 | `req_cli_07_nine_renderers_emit_exact_shape` |
+| REQ-CLI-06 | `req_cli_06_fix_applies_safe_skips_unsafe_byte_identical`, `req_cli_06_fix_unsafe_applies_unsafe`, `req_cli_06_unsafe_without_fix_exits_two` |
+| REQ-CLI-07 | `req_cli_07_nine_renderers_emit_exact_shape`, `req_cli_07_full_renders_from_advices` |
 | REQ-CLI-08 | `req_cli_08_concise_line_format_exact` |
 | REQ-CLI-09 | `req_cli_09_summary_line_wording_and_color` |
 | REQ-CLI-10 | `req_cli_10_exit_codes_gate_build`, `req_cli_10_exit_zero_forces_clean` |
@@ -486,7 +522,7 @@ Every load-bearing requirement maps to a test — this table is the proof.
 
 ## 12. End-to-End Test Plan
 
-The journeys that prove `check` behaves like a real CI gate: a clean fixture exits 0 with `All checks passed!`, a broken one exits 1 with the concise lines and summary, `--fix` repairs the tree with parity, each format renders its shape, the filters and `# noqa` work headlessly, and an unknown code is a fatal exit 2. These drive the built binary as a subprocess the way a pipeline does, per [E29](../foundations/E29-e2e-testing.md).
+The journeys that prove `check` behaves like a real CI gate: a clean fixture exits 0 with `All checks passed!`, a broken one exits 1 with the concise lines and summary, `--fix` repairs the tree with the Safe edits while `--fix --unsafe` adds the Unsafe ones, each format renders its shape, the filters (including a whole-class `--ignore`) and `# noqa` work headlessly, and an unknown code is a fatal exit 2. These drive the built binary as a subprocess the way a pipeline does, per [E29](../foundations/E29-e2e-testing.md).
 
 ### 12.1 Coverage target
 
@@ -501,8 +537,10 @@ Each scenario runs the real `sqlalchemy-lsp` binary as a subprocess and asserts 
 | E2E-01 | `check` over a clean fixture | happy | Exit 0; stdout is exactly `All checks passed! (checked N files)`. |
 | E2E-02 | `check` over a broken fixture | error | Exit 1; the concise lines print (`models/post.py:14:5: SQLA-W303 …`), then the `[*] K fixable` hint and `Found T problems (…) in F files (checked N files).`. |
 | E2E-03 | `check --output-format json` over the broken fixture | error | Exit 1; stdout is a JSON array matching the §8 shape (1-based location), no summary line. |
-| E2E-04 | `check --fix` over a fixable fixture, then re-run | happy | The deterministic edit is written to disk; the re-run drops that finding; the edit is byte-identical to the editor quick-fix (parity). |
+| E2E-04 | `check --fix` over a fixture with a Safe and an Unsafe fix, then re-run | happy | Only the Safe edit is written; the Unsafe finding remains; the result line reads `Fixed K; R remaining (M fixable with --unsafe)`; the edit is byte-identical to the editor quick-fix (parity). |
+| E2E-04b | `check --fix --unsafe` over the same fixture | happy | The Unsafe edit is now written too; the re-run drops it; the exit code matches the plain `--fix` run; `--unsafe` without `--fix` exits 2. |
 | E2E-05 | `check --select`/`--ignore` over the broken fixture | happy | Only the selected codes (after `--ignore`) print; the CLI flags override config. |
+| E2E-05b | `check --ignore SQLA-4xx` over the broken fixture | happy | Every relationship-class finding is filtered out at once; other classes still print. |
 | E2E-06 | `check` over a fixture with a `# noqa: SQLA-W303` line | happy | The suppressed code is absent; a `# noqa` matching nothing reports `SQLA-W901`. |
 | E2E-07 | `check --output-format github`/`junit`/`gitlab` over the broken fixture | error | Each emits its valid documented shape; no summary line. |
 | E2E-08 | `check --select SQLA-NOPE` (unknown code) | error | Exit 2 with the list of valid codes; nothing analyzed. |
@@ -519,8 +557,9 @@ The §12.2 scenarios, written Given/When/Then, are this feature's acceptance cri
 | AC-01 | A clean fixture on disk | the user runs `sqlalchemy-lsp check` | it exits 0 and prints `All checks passed! (checked N files)`. |
 | AC-02 | A broken fixture on disk | the user runs `sqlalchemy-lsp check` | it exits 1 and prints the concise finding lines plus the `Found T problems (…)` summary. |
 | AC-03 | The same fixture | the user runs `check --output-format json` | it exits 1 and stdout is a JSON array matching the §8 shape, no summary. |
-| AC-04 | A fixture with a deterministic fix available | the user runs `check --fix` | the edit is applied to disk, byte-identical to the editor's, and the re-report drops that finding. |
-| AC-05 | A broken fixture | the user runs `check --select`/`--ignore` | only the in-scope codes print; the CLI flags override config. |
+| AC-04 | A fixture with a Safe and an Unsafe fix | the user runs `check --fix` | the Safe edit is applied (byte-identical to the editor's), the Unsafe finding remains, and the result line points at `--fix --unsafe`. |
+| AC-04b | The same fixture | the user runs `check --fix --unsafe` | the Unsafe edit is applied too, the re-report drops it, and the exit code matches the plain `--fix` run. |
+| AC-05 | A broken fixture | the user runs `check --select`/`--ignore` (codes or a class token like `SQLA-4xx`) | only the in-scope codes print; the CLI flags override config. |
 | AC-06 | A fixture with a `# noqa: SQLA-…` line | the user runs `check` | the suppressed finding is absent and an unused suppression reports `SQLA-W901`. |
 | AC-07 | A filter naming an unknown code | the user runs `check --select SQLA-NOPE` | it exits 2 and lists the valid codes. |
 | AC-08 | One workspace | both `check` and the server analyze it | the two finding sets are identical (REQ-TST-05). |
@@ -532,24 +571,27 @@ The §12.2 scenarios, written Given/When/Then, are this feature's acceptance cri
 ### 13.1 Security & Privacy
 
 - **Access & authorization** — none crossed. The CLI is a single-user local tool over local files; `check`, `stats`, and `schema` are read-only static analysis (P1) over the source already in the workspace. `--fix` is the only writer.
-- **Input & validation** — source text is untrusted-but-local, parsed by tree-sitter and never evaluated (P1); a hostile file can do nothing but parse poorly and degrade to partial findings (P3). `--fix` writes only deterministic, provably-correct edits, and only to the user's own files (REQ-CLI-06). `schema --output FILE` writes only to the single path the user named, never elsewhere (REQ-CLI-12).
+- **Input & validation** — source text is untrusted-but-local, parsed by tree-sitter and never evaluated (P1); a hostile file can do nothing but parse poorly and degrade to partial findings (P3). `--fix` writes only the [F11](F11-code-actions.md) edits the [E16](../foundations/E16-conventions.md) `FixKind` marks Safe; the riskier Unsafe edits are written only when the user explicitly adds `--unsafe`, and either way only to the user's own files (REQ-CLI-06). `schema --output FILE` writes only to the single path the user named, never elsewhere (REQ-CLI-12).
 - **Data sensitivity** — no PII, secrets, or network calls; output carries only codes, ranges, messages, and the model/migration names already in the source — never file contents beyond the span a finding points at.
 - **Baseline** — inherits the suite-wide posture (constitution §13.1): local files only, no code execution, no telemetry; logs go to stderr/`log_file`, never stdout (it carries the report).
 
 ## 15. Open Questions & Decisions
 
-- **Decision** — `check --fix` ships in v1 (REQ-CLI-06), applying the deterministic [F11](F11-code-actions.md) fixes to disk and matching editor quick-fixes byte-for-byte ([E17 REQ-TST-05](../foundations/E17-testing.md)). This makes the F11 action layer's editor-independence a v1 requirement.
+- **Decision** — `check --fix` ships in v1 (REQ-CLI-06), applying the **Safe** [F11](F11-code-actions.md) fixes to disk and matching editor quick-fixes byte-for-byte ([E17 REQ-TST-05](../foundations/E17-testing.md)). This makes the F11 action layer's editor-independence a v1 requirement.
+- **Decision** — `check --fix --unsafe` ships in v1 too, mirroring Biome's Safe/Unsafe split: `--fix` applies only `FixKind::Safe` edits, `--unsafe` opts into the `FixKind::Unsafe` ones. The classification lives in [E16](../foundations/E16-conventions.md) and is set per code in the [F11](F11-code-actions.md) catalog, so the CLI never decides what is safe.
+- **Decision** — every reporter renders from the one [E16](../foundations/E16-conventions.md) diagnostic model (code, severity, message, location, advices, tags); the `full` frame and `help:`/`note:` lines come from `CodeFrame`/`Note` advices, not hand-formatting. This keeps the editor and CLI descriptions of a finding provably identical.
 - **Decision** — `stats` (REQ-CLI-11) and `schema` (REQ-CLI-12) ship in v1; both reuse the index at near-zero cost. `schema` defers all diagram content to [F12](F12-schema-visualization.md).
 - **Decision** — `check` exits `1` on *any* finding severity (ruff semantics), not only warning/error; scope with `--select`/`--ignore` rather than relying on severity.
-- **Decision** — Findings are filtered by code, not family, matching [E15](../foundations/E15-app-config.md); a `SQLA-7xx` glob is a possible later convenience.
+- **Decision** — `--select`/`--ignore` accept codes, [E15](../foundations/E15-app-config.md) **class tokens** (`SQLA-3xx`), and **presets** (`recommended`/`all`/`none`), resolved by specificity exactly as the config resolves them — so a CI gate can drop or enable a whole diagnostic class in one token.
 - **OQ-CLI-1** — A `--statistics`/`--min-findings` CI gate (fail below/above a threshold) and a per-code documentation `url` field in the JSON shape are recorded as follow-ups, not v1.
 
 ## 16. Cross-References
 
-- **Depends on:** [E07-data-model](../foundations/E07-data-model.md) — the `WorkspaceState` and index queries `check`/`stats` read; [E30-extraction-and-indexing](../foundations/E30-extraction-and-indexing.md) — the extraction the one-shot pipeline runs; [E15-app-config](../foundations/E15-app-config.md) — `--select`/`--ignore` mirror the config and `# noqa` resolution; [E16-conventions](../foundations/E16-conventions.md) — the never-log-to-stdout rule and the resilience contract; [E17-testing](../foundations/E17-testing.md) — REQ-TST-05 CLI/server-and-`--fix` parity; [constitution](../constitution.md) — P1 (static only), P3 (degrade), P4 (deterministic fixes only), P5 (companion).
-- **Related:** [F01-orm-correctness-diagnostics](F01-orm-correctness-diagnostics.md) / [F02-best-practice-lints](F02-best-practice-lints.md) / [F13-alembic-support](F13-alembic-support.md) — the diagnostics `check` runs; [F11-code-actions](F11-code-actions.md) — the deterministic edits `--fix` applies; [F12-schema-visualization](F12-schema-visualization.md) — the renderers `schema` drives; [F03-completions](F03-completions.md) / [F05-go-to-definition](F05-go-to-definition.md) / [F09-signature-help](F09-signature-help.md) — editor-only features the CLI does not surface; [F16-release-ci](F16-release-ci.md) — runs `check` in CI and pre-commit.
+- **Depends on:** [E07-data-model](../foundations/E07-data-model.md) — the `WorkspaceState` and index queries `check`/`stats` read; [E30-extraction-and-indexing](../foundations/E30-extraction-and-indexing.md) — the extraction the one-shot pipeline runs; [E15-app-config](../foundations/E15-app-config.md) — `--select`/`--ignore` mirror the config's codes, class tokens, and presets ([REQ-CFG-12](../foundations/E15-app-config.md)) and its `# noqa` resolution; [E16-conventions](../foundations/E16-conventions.md) — the shared diagnostic model every reporter renders (advices, tags), the `FixKind` Safe/Unsafe enum `--fix`/`--unsafe` read, and the never-log-to-stdout and resilience contracts; [E17-testing](../foundations/E17-testing.md) — REQ-TST-05 CLI/server parity, extended to both `FixKind`s; [constitution](../constitution.md) — P1 (static only), P3 (degrade), P4 (no guessed fixes), P5 (companion).
+- **Related:** [F01-orm-correctness-diagnostics](F01-orm-correctness-diagnostics.md) / [F02-best-practice-lints](F02-best-practice-lints.md) / [F13-alembic-support](F13-alembic-support.md) — the diagnostics `check` runs; [F11-code-actions](F11-code-actions.md) — the edits `--fix`/`--fix --unsafe` apply, and the catalog that classifies each as Safe or Unsafe; [F12-schema-visualization](F12-schema-visualization.md) — the renderers `schema` drives; [F03-completions](F03-completions.md) / [F05-go-to-definition](F05-go-to-definition.md) / [F09-signature-help](F09-signature-help.md) — editor-only features the CLI does not surface; [F16-release-ci](F16-release-ci.md) — runs `check` in CI and pre-commit.
 - **Testing:** [E17-testing](../foundations/E17-testing.md#2-coverage-policy) — the coverage policy and the [fixtures registry](../foundations/E17-testing.md#5-fixtures-registry) §11 reuses ([bad-fk](../foundations/E17-testing.md#bad-fk) for parity, [backref-deprecated](../foundations/E17-testing.md#backref-deprecated) for `--fix`); [E29-e2e-testing](../foundations/E29-e2e-testing.md#2-coverage-policy) — the journey harness §12 drives.
 
 ## 17. Changelog
 
+- **2026-06-18** (v0.2) — Adapted two Biome patterns. Split `--fix` into **Safe** and **Unsafe** by the [E16](../foundations/E16-conventions.md) `FixKind` (classified per code in [F11](F11-code-actions.md)): `--fix` applies only Safe edits, `--fix --unsafe` adds the Unsafe ones; reworked the summary to ruff/mypy form — `[*] 2 fixable with the \`--fix\` option.` / `[*] 1 fixable with \`--fix --unsafe\`.` and `Fixed 2 problems; 3 remaining (1 fixable with --unsafe).` — and updated the §6.1/§6.3 mockups to match. Recast the nine output shapes as **reporters** (`--reporter`, alias `--output-format`) that all render from the one [E16](../foundations/E16-conventions.md) diagnostic model, with the `full` frame and `help:`/`note:` lines coming from `CodeFrame`/`Note` **advices** rather than hand-formatting; added an `advices` field and a `fix.applicability` (`FixKind`) field to the JSON shape. Taught `--select`/`--ignore` the [E15](../foundations/E15-app-config.md) **class tokens and presets** (`SQLA-3xx`, `all`/`recommended`/`none`). Extended Testing and E2E to cover `--fix` skipping Unsafe, `--fix --unsafe` applying them with unchanged exit codes, `--unsafe` without `--fix` erroring, and `--ignore SQLA-4xx` filtering a whole class. Cross-linked E16/E15/F11/E17.
 - **2026-06-17** — Initial draft. Defined the `lsp`/`check`/`stats`/`schema` subcommand surface mirroring babel-lsp's CLI; the `check` output contract with nine ruff-style `--output-format` renderers, the exact concise line `rel-path:line:col: CODE message`, and the ruff/mypy summary (`All checks passed!` / `Found T problems (…) in F files (checked N files).` / `Fixed K; R remaining.`); `--select`/`--ignore` config override, `# noqa` honoring with `SQLA-W901`, `--fix` deterministic-edit parity with [F11](F11-code-actions.md), `--exit-zero`, and exit codes 0/1/2; the `stats` workspace summary and the `schema` subcommand deferring to [F12](F12-schema-visualization.md). Added the five console mockups, the machine-format examples, and the `check` exit-code flow diagram.

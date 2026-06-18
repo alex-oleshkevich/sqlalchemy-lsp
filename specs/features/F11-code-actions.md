@@ -2,11 +2,11 @@
 
 > **Status:** Draft
 >
-> **Version:** 0.2   ·   **Last updated:** 2026-06-18
+> **Version:** 0.3   ·   **Last updated:** 2026-06-18
 >
-> **Purpose:** The quick fixes the server offers to repair a SQLAlchemy finding — generate a `__tablename__`, fix a `back_populates`, add a missing foreign-key column, modernize a `backref` — and the rule that every edit is byte-identical to what `check --fix` applies.
+> **Purpose:** The quick fixes the server offers to repair a SQLAlchemy finding — generate a `__tablename__`, fix a `back_populates`, add a missing foreign-key column, modernize a `backref` — each tagged Safe or Unsafe, resolved lazily, and byte-identical to what `check --fix` applies.
 >
-> **Depends on:** [constitution](../constitution.md), [E07-data-model](../foundations/E07-data-model.md), [E30-extraction-and-indexing](../foundations/E30-extraction-and-indexing.md), [E15-app-config](../foundations/E15-app-config.md), [E17-testing](../foundations/E17-testing.md)   ·   **Related:** [F01-orm-correctness-diagnostics](F01-orm-correctness-diagnostics.md), [F02-best-practice-lints](F02-best-practice-lints.md), [F14-cli-linter](F14-cli-linter.md), [E29-e2e-testing](../foundations/E29-e2e-testing.md)
+> **Depends on:** [constitution](../constitution.md), [E01-architecture](../foundations/E01-architecture.md), [E07-data-model](../foundations/E07-data-model.md), [E16-conventions](../foundations/E16-conventions.md), [E30-extraction-and-indexing](../foundations/E30-extraction-and-indexing.md), [E15-app-config](../foundations/E15-app-config.md), [E17-testing](../foundations/E17-testing.md)   ·   **Related:** [F01-orm-correctness-diagnostics](F01-orm-correctness-diagnostics.md), [F02-best-practice-lints](F02-best-practice-lints.md), [F14-cli-linter](F14-cli-linter.md), [E29-e2e-testing](../foundations/E29-e2e-testing.md)
 
 > Requirement tag: **CA**
 
@@ -21,7 +21,9 @@ This spec covers:
 - The **legacy ported fixes** — generate `__tablename__`, fix a `back_populates` value, add a missing foreign-key column, and proactively suggest a `back_populates` even when nothing is flagged.
 - **One quick fix per fixable new lint** — backref→`back_populates`, `declarative_base()`→`DeclarativeBase`, add `timezone=True`, wrap a mutable default in its callable, add `Optional[...]`, add `Mapped[...]`, add `unique=True` for a one-to-one, rewrite a cascade to `all, delete-orphan`, name a constraint, scaffold a `naming_convention`, and add `foreign_keys=`.
 - The **diagnostic-to-fix map** — which `SQLA-` code each action resolves.
-- The **parity contract** — every edit is byte-identical to the edit `check --fix` ([F14](F14-cli-linter.md)) produces, pinned by [E17 REQ-TST-05](../foundations/E17-testing.md#6-conventions).
+- The **Safe / Unsafe classification** — every action wears a `FixKind` (defined in [E16](../foundations/E16-conventions.md)) that decides whether `check --fix` applies it on its own or only under `--unsafe`.
+- **Lazy resolution** — `textDocument/codeAction` returns lightweight metadata; the `WorkspaceEdit` is computed on `codeAction/resolve`.
+- The **parity contract** — every edit is byte-identical to the edit `check --fix` ([F14](F14-cli-linter.md)) produces, pinned by [E17 REQ-TST-05](../foundations/E17-testing.md#6-conventions), held per FixKind.
 
 ## 2. Non-Goals / Out of Scope
 
@@ -39,6 +41,10 @@ The hard requirement is **parity with the CLI**. The constitution's *one engine,
 
 One fix is special: the **proactive `back_populates` suggestion**. Unlike every other action, it is offered with *no diagnostic attached* — when your cursor sits on a one-sided `relationship` whose counterpart exists, the server offers to wire the pair, even though nothing is flagged. It is a *refactor* action, not a *quickfix*, and it is the one place this feature reads the cursor position rather than a published diagnostic.
 
+Not every fix is equally trustworthy, and that matters most when fixes are applied in a batch. Adding `Optional[...]` to a nullable column is an unambiguous correction — there is exactly one right answer and the database schema doesn't move. Generating a `__tablename__` is a *guess*: the name is a consequential choice, and once it ships it shapes your migrations. So every action carries a `FixKind` — `Safe` or `Unsafe`, the enum [E16](../foundations/E16-conventions.md) defines — and `check --fix` ([F14](F14-cli-linter.md)) honors it: `--fix` applies only the Safe ones, `--fix --unsafe` opts into the rest. The editor shows both, but marks the Unsafe ones so a click is a deliberate act. The principle is simple: **Safe** is an unambiguous correction that changes neither schema nor runtime behavior; **Unsafe** changes the DB schema or runtime behavior, or involves a guess.
+
+The last shape worth naming is *when* the edit is built. Computing every `WorkspaceEdit` for every action in range — most of which the user never picks — is wasted work. So the server resolves lazily: `textDocument/codeAction` returns only the action's title, kind, and the `SQLA-` code it fixes, and the heavy `WorkspaceEdit` is computed on `codeAction/resolve`, for the one action the user actually chose ([E01 REQ-ARCH-15](../foundations/E01-architecture.md#5-detailed-specification)).
+
 ## 4. Concepts & Definitions
 
 These terms are canonical across the suite; the glossary owns the full definitions.
@@ -48,6 +54,8 @@ These terms are canonical across the suite; the glossary owns the full definitio
 - **Diagnostic code** — the `SQLA-<SEV><CLASS><NN>` identifier a fix resolves; the action attaches the diagnostic it answers so the editor can pair them. (Canonical definition in [glossary](../glossary.md).)
 - **Parity** — the rule that `check` and the server emit identical findings, extended here to identical *fixes*. (Canonical definition in [glossary](../glossary.md); owned by [E17](../foundations/E17-testing.md).)
 - **`back_populates`** — the kwarg naming the reverse relationship on the target model, wiring a bidirectional pair. (Canonical definition in [glossary](../glossary.md).)
+- **`FixKind`** — the `Safe` / `Unsafe` tag every action wears, deciding whether `check --fix` applies it on its own. The enum is owned by [E16](../foundations/E16-conventions.md); this spec assigns one to each fix in [§5.2](#52-the-fix-catalog).
+- **Lazy resolution** — the LSP pattern where `textDocument/codeAction` returns metadata only and the `WorkspaceEdit` is computed later on `codeAction/resolve`. The server advertises `codeActionProvider.resolveProvider = true` ([E01 REQ-ARCH-15](../foundations/E01-architecture.md#5-detailed-specification)).
 
 ## 5. Detailed Specification
 
@@ -61,33 +69,50 @@ The handler walks the diagnostics in the requested range, and for each one whose
 
 The editor sends `textDocument/codeAction` with a range and the diagnostics overlapping it. For each diagnostic carrying a `SQLA-` code that has a fix in the catalog ([§5.2](#52-the-fix-catalog)), the handler produces a `QuickFix` action whose `diagnostics` field references the diagnostic it resolves, so the editor can show it under that squiggle. The proactive `back_populates` action ([§5.3](#53-the-legacy-ported-fixes)) is the exception — it is a `Refactor` offered when the cursor sits inside a qualifying `relationship`, with no diagnostic attached. When a fix can't be computed — the target model is unresolved, the parse tree is missing the node — the handler offers nothing for that diagnostic rather than a partial or guessed edit (constitution P4).
 
-**REQ-CA-02 — Every fix edit is byte-identical to `check --fix`.**
+**REQ-CA-02 — Every fix edit is byte-identical to `check --fix`, per FixKind.**
 
 Each fix is produced by one shared function that both the code-action handler and `check --fix` ([F14](F14-cli-linter.md)) call. The `WorkspaceEdit` the editor applies and the bytes `check --fix` writes to disk for the same finding are identical — same insertion point, same text, same whitespace and quoting. This is the fix half of [E17 REQ-TST-05](../foundations/E17-testing.md#6-conventions), and a parity test applies both paths to a broken fixture and asserts the resulting source matches character for character.
+
+Parity now holds *per FixKind*. A Safe fix must land identically whether the editor applied it or `check --fix` did; an Unsafe fix must land identically whether the editor applied it or `check --fix --unsafe` did. The parity test runs each fixture under the front-end pair that would apply that fix — so the Safe set is checked against `check --fix` and the Unsafe set against `check --fix --unsafe`.
+
+**REQ-CA-1A — Every action carries a FixKind; `check --fix` applies Safe only.**
+
+Every action this feature offers is tagged with a `FixKind` — `Safe` or `Unsafe`, the enum [E16](../foundations/E16-conventions.md) owns — using the classification in [§5.2](#52-the-fix-catalog): **Safe** is an unambiguous correction with one right answer that touches neither the DB schema nor runtime behavior; **Unsafe** changes the schema or runtime behavior, or rests on a guess. The CLI honors the tag: `sqlalchemy-lsp check --fix` ([F14](F14-cli-linter.md)) applies the Safe fixes and skips the Unsafe ones; `check --fix --unsafe` applies the Unsafe ones too. The editor offers both, but the resolved `CodeAction` for an Unsafe fix is marked (`isPreferred` is reserved for Safe fixes; Unsafe actions carry no preferred flag) so the user picks it deliberately.
+
+**REQ-CA-1B — Actions resolve lazily; the edit is built on `codeAction/resolve`.**
+
+The server advertises `codeActionProvider.resolveProvider = true` ([E01 REQ-ARCH-15](../foundations/E01-architecture.md#5-detailed-specification)). A `textDocument/codeAction` request returns lightweight metadata for each action — its `title`, its `kind`, the `diagnostic` it answers (carrying the `SQLA-` code), and its `FixKind` mark — with the `edit` field left empty. The heavy `WorkspaceEdit` is computed only when the client sends `codeAction/resolve` for the one action the user selected, through the same shared fix function (REQ-CA-02). The resolved fix's Diff preview is rendered from the E16 `Diff` advice attached to the diagnostic, so the before/after the user previews matches the bytes that will be written.
 
 ### 5.2 The fix catalog
 
 This is the authoritative list of every quick fix, the diagnostic it resolves, and what it edits. Each row is a load-bearing requirement; the prose for the load-bearing ones follows in [§5.3](#53-the-legacy-ported-fixes)–[§5.4](#54-the-new-lint-fixes). The "fixable" column of [F01](F01-orm-correctness-diagnostics.md) and the [F02 catalog](F02-best-practice-lints.md#57-orm-extensions-sqla-6xx) table list the same set from the diagnostic side.
 
-| Req | Action title | Resolves | Source | What it edits |
-|---|---|---|---|---|
-| REQ-CA-03 | Add `__tablename__ = "…"` | `SQLA-W101` | F01 | Inserts `__tablename__` as the first class-body line, name = snake_case plural of the model |
-| REQ-CA-04 | Fix `back_populates` to `…` | `SQLA-W402`, `SQLA-W403` | F01 | Replaces the wrong `back_populates` string with the resolved counterpart's attribute name |
-| REQ-CA-05 | Add FK column `…_id` | `SQLA-H406` | F01 | Inserts a `Mapped[<pk-type>] = mapped_column(ForeignKey("…"))` line before the relationship |
-| REQ-CA-06 | Add `back_populates="…"` (proactive) | *(none — refactor)* | F01 | Appends `back_populates="…"` to a one-sided `relationship` whose counterpart exists |
-| REQ-CA-07 | Add `Optional[…]` | `SQLA-W201` | F01 | Wraps the column's `Mapped[T]` inner type in `Optional[…]` |
-| REQ-CA-08 | Add `unique=True` | `SQLA-H407` | F01 | Adds `unique=True` to the backing FK column of a one-to-one |
-| REQ-CA-09 | Rewrite cascade to `all, delete-orphan` | `SQLA-W409` | F01 | Replaces the cascade string with `all, delete-orphan` |
-| REQ-CA-10 | Rewrite `backref` into a `back_populates` pair | `SQLA-W501` | F02 | Replaces `backref="x"` with `back_populates="x"` and adds the counterpart attribute on the target model |
-| REQ-CA-11 | Use `class Base(DeclarativeBase)` | `SQLA-W502` | F02 | Rewrites `Base = declarative_base()` to the 2.0 class form |
-| REQ-CA-12 | Add `timezone=True` | `SQLA-H205` | F02 | Adds `timezone=True` to the `DateTime(...)` type |
-| REQ-CA-13 | Wrap mutable default in its callable | `SQLA-W203` | F02 | Rewrites `default=[]`→`default=list`, `default={}`→`default=dict`, `default=set()`→`default=set` |
-| REQ-CA-14 | Add `Mapped[…]` annotation | `SQLA-W504` | F02 | Infers the type from the SQL type and adds the `Mapped[…]` annotation |
-| REQ-CA-15 | Drop the contradicting `nullable` flag | `SQLA-H202` | F02 | Removes `nullable=False` when the type is already non-`Optional` |
-| REQ-CA-16 | Name the constraint | `SQLA-H106` | F02 | Inserts a `name="…"` into the bare `__table_args__` constraint |
-| REQ-CA-17 | Scaffold a `naming_convention` | `SQLA-H107` | F02 | Inserts a `metadata = MetaData(naming_convention=…)` block on the resolved base |
-| REQ-CA-18 | Add `foreign_keys=…` | `SQLA-W304`, `SQLA-W305` | F02 | Scaffolds `foreign_keys=[…]` on the relationship with the candidate columns |
-| REQ-CA-19 | Rename the import alias to `sa` | `SQLA-I505` | F02 | Renames `import sqlalchemy as <x>` to `as sa` and every use of `<x>` in the file |
+| Req | Action title | Resolves | Source | FixKind | What it edits |
+|---|---|---|---|---|---|
+| REQ-CA-03 | Add `__tablename__ = "…"` | `SQLA-W101` | F01 | **Unsafe** | Inserts `__tablename__` as the first class-body line, name = snake_case plural of the model |
+| REQ-CA-04 | Fix `back_populates` to `…` | `SQLA-W402`, `SQLA-W403` | F01 | **Safe** | Replaces the wrong `back_populates` string with the resolved counterpart's attribute name |
+| REQ-CA-05 | Add FK column `…_id` | `SQLA-H406` | F01 | **Unsafe** | Inserts a `Mapped[<pk-type>] = mapped_column(ForeignKey("…"))` line before the relationship |
+| REQ-CA-06 | Add `back_populates="…"` (proactive) | *(none — refactor)* | F01 | **Safe** | Appends `back_populates="…"` to a one-sided `relationship` whose counterpart exists |
+| REQ-CA-07 | Add `Optional[…]` | `SQLA-W201` | F01 | **Safe** | Wraps the column's `Mapped[T]` inner type in `Optional[…]` |
+| REQ-CA-08 | Add `unique=True` | `SQLA-H407` | F01 | **Unsafe** | Adds `unique=True` to the backing FK column of a one-to-one |
+| REQ-CA-09 | Rewrite cascade to `all, delete-orphan` | `SQLA-W409` | F01 | **Unsafe** | Replaces the cascade string with `all, delete-orphan` |
+| REQ-CA-10 | Rewrite `backref` into a `back_populates` pair | `SQLA-W501` | F02 | **Unsafe** | Replaces `backref="x"` with `back_populates="x"` and adds the counterpart attribute on the target model |
+| REQ-CA-11 | Use `class Base(DeclarativeBase)` | `SQLA-W502` | F02 | **Unsafe** | Rewrites `Base = declarative_base()` to the 2.0 class form |
+| REQ-CA-12 | Add `timezone=True` | `SQLA-H205` | F02 | **Unsafe** | Adds `timezone=True` to the `DateTime(...)` type |
+| REQ-CA-13 | Wrap mutable default in its callable | `SQLA-W203` | F02 | **Safe** | Rewrites `default=[]`→`default=list`, `default={}`→`default=dict`, `default=set()`→`default=set` |
+| REQ-CA-14 | Add `Mapped[…]` annotation | `SQLA-W504` | F02 | **Safe** | Infers the type from the SQL type and adds the `Mapped[…]` annotation |
+| REQ-CA-15 | Drop the contradicting `nullable` flag | `SQLA-H202` | F02 | **Safe** | Removes `nullable=False` when the type is already non-`Optional` |
+| REQ-CA-16 | Name the constraint | `SQLA-H106` | F02 | **Unsafe** | Inserts a `name="…"` into the bare `__table_args__` constraint |
+| REQ-CA-17 | Scaffold a `naming_convention` | `SQLA-H107` | F02 | **Unsafe** | Inserts a `metadata = MetaData(naming_convention=…)` block on the resolved base |
+| REQ-CA-18 | Add `foreign_keys=…` | `SQLA-W304`, `SQLA-W305` | F02 | **Unsafe** | Scaffolds `foreign_keys=[…]` on the relationship with the candidate columns |
+| REQ-CA-19 | Rename the import alias to `sa` | `SQLA-I505` | F02 | **Safe** | Renames `import sqlalchemy as <x>` to `as sa` and every use of `<x>` in the file |
+
+The "FixKind" column is the contract `check --fix` reads (REQ-CA-1A). The table below restates it as the Safe / Unsafe split, with the *why* for each call:
+
+| FixKind | Fixes | Why |
+|---|---|---|
+| **Safe** | REQ-CA-04 fix `back_populates`, REQ-CA-06 proactive `back_populates`, REQ-CA-07 add `Optional[…]`, REQ-CA-13 wrap mutable default, REQ-CA-14 add `Mapped[…]`, REQ-CA-15 drop contradicting `nullable`, REQ-CA-19 rename import alias | Each is an unambiguous correction with a single right answer that leaves the DB schema and runtime behavior unchanged — wrapping a mutable default in its callable, adding the `Optional`/`Mapped` the annotation already implies, or fixing a `back_populates` to its one correct counterpart. |
+| **Unsafe** | REQ-CA-03 generate `__tablename__`, REQ-CA-05 add FK column, REQ-CA-08 add `unique=True`, REQ-CA-09 rewrite cascade, REQ-CA-10 backref→`back_populates`, REQ-CA-11 `declarative_base()`→`DeclarativeBase`, REQ-CA-12 add `timezone=True`, REQ-CA-16 name constraint, REQ-CA-17 scaffold `naming_convention`, REQ-CA-18 add `foreign_keys=` | Each changes the DB schema or runtime behavior, or rests on a guess: the table name and the FK column are consequential names; `unique=True`, `timezone=True`, the FK column, and a named constraint move the migration; rewriting the cascade changes delete behavior; the backref rewrite and the `declarative_base()` rewrite restructure code; `foreign_keys=` is a disambiguation guess. |
 
 > **Note:** Many diagnostics deliberately have no fix because the right repair is a judgment call — `SQLA-W104` missing-primary-key (which column?), `SQLA-H206` unbounded-string (what length?), `SQLA-W408` unknown-cascade (which token did you mean?). Those rules guide with their message; this feature stays out of the user's way.
 
@@ -241,12 +266,24 @@ flowchart TB
 
 ## 8. Data Shapes
 
-The handler returns LSP `CodeAction` objects. A quick fix carries the resolving diagnostic and a `WorkspaceEdit`; the proactive refactor carries the edit alone. Positions are emitted under the negotiated encoding ([E01 REQ-ARCH-10](../foundations/E01-architecture.md#56-protocol-conduct)).
+The handler returns LSP `CodeAction` objects in two stages. `textDocument/codeAction` returns the metadata only — `title`, `kind`, the resolving `diagnostics`, and an `isPreferred` flag the server sets for Safe fixes — with the `edit` field absent (REQ-CA-1B). The client then sends `codeAction/resolve` for the chosen action, and the server fills in the `WorkspaceEdit`. Positions are emitted under the negotiated encoding ([E01 REQ-ARCH-10](../foundations/E01-architecture.md#56-protocol-conduct)).
 
-A single-file quick fix — generate `__tablename__`:
+The lightweight `textDocument/codeAction` response for the `__tablename__` fix — no edit yet, and `isPreferred` omitted because this fix is Unsafe (REQ-CA-1A):
 
 ```jsonc
-// one entry of the textDocument/codeAction response
+// one entry of the textDocument/codeAction response — metadata only
+{
+  "title": "Add `__tablename__ = \"users\"`",
+  "kind": "quickfix",
+  "diagnostics": [ { "code": "SQLA-W101", "range": { "...": "..." } } ]
+  // no "edit" — it is computed on codeAction/resolve
+}
+```
+
+The `codeAction/resolve` response for that same action fills in the edit. A single-file quick fix — generate `__tablename__`:
+
+```jsonc
+// the codeAction/resolve response for the action above
 {
   "title": "Add `__tablename__ = \"users\"`",
   "kind": "quickfix",
@@ -316,7 +353,9 @@ Each row is a behavior under test. Computing an edit from the index needs cross-
 | Behavior / scenario | Type | Fixtures | Verifies |
 |---|---|---|---|
 | Fix offered per reported diagnostic; refactor per cursor | integration | [clean-blog](../foundations/E17-testing.md#clean-blog) | REQ-CA-01 |
-| Every fix edit is byte-identical to `check --fix` | integration | [missing-tablename](../foundations/E17-testing.md#missing-tablename), [back-populates-mismatch](../foundations/E17-testing.md#back-populates-mismatch), [backref-deprecated](../foundations/E17-testing.md#backref-deprecated) | REQ-CA-02 |
+| Every fix edit is byte-identical to `check --fix` (Safe) / `check --fix --unsafe` (Unsafe) | integration | [missing-tablename](../foundations/E17-testing.md#missing-tablename), [back-populates-mismatch](../foundations/E17-testing.md#back-populates-mismatch), [backref-deprecated](../foundations/E17-testing.md#backref-deprecated) | REQ-CA-02 |
+| A Safe fix auto-applies under `check --fix`; an Unsafe fix is skipped without `--unsafe` and applied with it | integration | [back-populates-mismatch](../foundations/E17-testing.md#back-populates-mismatch), [missing-tablename](../foundations/E17-testing.md#missing-tablename) | REQ-CA-1A |
+| `textDocument/codeAction` returns metadata only; `codeAction/resolve` produces the `WorkspaceEdit` | integration | [missing-tablename](../foundations/E17-testing.md#missing-tablename) | REQ-CA-1B |
 | Generate `__tablename__` (snake_case plural) offered + applied | integration | [missing-tablename](../foundations/E17-testing.md#missing-tablename) | REQ-CA-03 |
 | Fix `back_populates` to resolved counterpart | integration | [back-populates-mismatch](../foundations/E17-testing.md#back-populates-mismatch) | REQ-CA-04 |
 | Add missing FK column for a relationship | integration | [missing-fk-for-relationship](../foundations/E17-testing.md#missing-fk-for-relationship) | REQ-CA-05 |
@@ -349,6 +388,8 @@ Every load-bearing requirement maps to a test — this table is the proof.
 |---|---|
 | REQ-CA-01 | `req_ca_01_fix_per_diag_refactor_per_cursor` |
 | REQ-CA-02 | `req_ca_02_parity_with_check_fix`, `req_ca_02_ranges_both_encodings` |
+| REQ-CA-1A | `req_ca_1a_safe_applied_unsafe_skipped`, `req_ca_1a_unsafe_applied_with_flag` |
+| REQ-CA-1B | `req_ca_1b_code_action_metadata_only`, `req_ca_1b_resolve_produces_edit` |
 | REQ-CA-03 | `req_ca_03_generate_tablename` |
 | REQ-CA-04 | `req_ca_04_fix_back_populates` |
 | REQ-CA-05 | `req_ca_05_add_fk_column` |
@@ -374,7 +415,7 @@ The journeys drive the built binary over stdio with `pytest-lsp`: open a broken 
 
 ### 12.1 Coverage target
 
-**100% of the feature's scope, end to end** — every fix offered *and* applied, the proactive refactor, the two-file `backref` rewrite, the no-fix paths, and parity with `check --fix`. See the policy in [E29-e2e-testing](../foundations/E29-e2e-testing.md#2-coverage-policy). The shared protocol-conformance journeys ([E29 REQ-E2E-03](../foundations/E29-e2e-testing.md#5-patterns)) — including relink→empty-publish, which proves an applied fix clears its diagnostic — are inherited, not re-tested here.
+**100% of the feature's scope, end to end** — every fix offered *and* applied, the proactive refactor, the two-file `backref` rewrite, the no-fix paths, the Safe / Unsafe split under `check --fix`, lazy `codeAction/resolve`, and parity with `check --fix`. See the policy in [E29-e2e-testing](../foundations/E29-e2e-testing.md#2-coverage-policy). The shared protocol-conformance journeys ([E29 REQ-E2E-03](../foundations/E29-e2e-testing.md#5-patterns)) — including relink→empty-publish, which proves an applied fix clears its diagnostic — are inherited, not re-tested here.
 
 ### 12.2 Scenarios
 
@@ -393,6 +434,10 @@ Each scenario seeds a fixture from the [E17 registry](../foundations/E17-testing
 | E2E-09 | Several fixable diagnostics on one line | happy | One action each, in catalog order (REQ-CA-20) |
 | E2E-10 | Request actions on a mid-edit file with `ERROR` nodes | error | Actions only for recovered nodes; no crash (P3) |
 | E2E-11 | Apply a fix in the `non-ascii` fixture | happy | Edit lands on the right range under both negotiated encodings |
+| E2E-12 | Run `check --fix` on a fixture with a Safe finding (`SQLA-W402`) | happy | The Safe fix auto-applies and is written to disk; the finding clears |
+| E2E-13 | Run `check --fix` on a fixture with an Unsafe finding (`SQLA-W101`) | happy | The Unsafe fix is skipped, the file is untouched, and the finding is reported as unfixed-without-`--unsafe` |
+| E2E-14 | Run `check --fix --unsafe` on the same Unsafe fixture | happy | The Unsafe fix applies; the written bytes match the editor's resolved edit (REQ-CA-02) |
+| E2E-15 | Request actions, then `codeAction/resolve` the chosen one | happy | The `textDocument/codeAction` response carries no `edit`; `resolve` returns the `WorkspaceEdit` that, applied, clears the finding (REQ-CA-1B) |
 
 ### 12.3 Acceptance criteria & Definition of Done
 
@@ -405,6 +450,8 @@ The §12.2 scenarios, written Given/When/Then, are this feature's acceptance cri
 | AC-03 | The `backref-deprecated` workspace is open | I apply the `backref`→`back_populates` rewrite | Both the relationship file and the target-model file are edited and both findings clear |
 | AC-04 | Any broken fixture with a fixable finding | I apply the editor fix and `check --fix` separately | The resulting source files are byte-identical |
 | AC-05 | A finding with no registered fix is published | I open the code-action menu | No SQLAlchemy quick fix appears and the server does not crash |
+| AC-06 | A fixture carries one Safe finding and one Unsafe finding | I run `check --fix` | The Safe fix is written and the Unsafe one is left untouched; rerunning with `--unsafe` writes the Unsafe fix too |
+| AC-07 | A broken fixture is open and an action is offered | I select the action and the client sends `codeAction/resolve` | The initial action carried no edit; `resolve` returns the `WorkspaceEdit` and applying it clears the finding |
 
 **Definition of Done:** every `REQ-CA-NN` has a passing test (§11.4), every acceptance scenario above passes, and the enabled non-functional concern (§13.1) is verified.
 
@@ -415,7 +462,7 @@ The §12.2 scenarios, written Given/When/Then, are this feature's acceptance cri
 - **Access & authorization** — none. Code actions are a read request answered from the in-memory index plus the held parse tree; applying the returned `WorkspaceEdit` is the editor's act on the user's own files, within the editor's existing trust boundary. The server never writes files itself in the LSP path.
 - **Input & validation** — the inputs are a URI, a range, and the diagnostics the editor reports. The handler reads only already-extracted facts and the parse tree, runs no user code (constitution P1), and shells out to nothing. A reported diagnostic the index can't corroborate yields no edit (it never edits a guessed range).
 - **Data sensitivity** — none beyond the user's own source. The proposed edits are returned to the requesting editor; nothing leaves the process, nothing is logged to stdout, and `tracing` goes to stderr/`log_file` only (constitution §13.5).
-- **Baseline** — stays within the suite-wide envelope: local files only, no network, no telemetry, no secrets. When the same fixes are applied headlessly by `check --fix`, that command writes only the workspace files it is fixing — see [F14](F14-cli-linter.md).
+- **Baseline** — stays within the suite-wide envelope: local files only, no network, no telemetry, no secrets. When the same fixes are applied headlessly by `check --fix`, that command writes only the workspace files it is fixing, and only the Safe ones unless `--unsafe` is passed (REQ-CA-1A) — see [F14](F14-cli-linter.md).
 
 ### 13.2 Accessibility
 
@@ -430,10 +477,11 @@ The §12.2 scenarios, written Given/When/Then, are this feature's acceptance cri
 
 ## 15. Cross-References
 
-- **Depends on:** [constitution](../constitution.md) — P1 (static analysis), P4 (no edit over a guess), P5 (companion, not replacement), and the §4.6 words-not-color rule the action titles honor; [E07-data-model](../foundations/E07-data-model.md) — the model/column/relationship facts and the index the edits resolve against; [E30-extraction-and-indexing](../foundations/E30-extraction-and-indexing.md) — the base/forward-ref/type resolution several fixes rely on; [E15-app-config](../foundations/E15-app-config.md) — the diagnostics config that gates which findings (and thus which fixes) are active; the `SQLA-H107` scaffold inserts a conventional default `naming_convention` map (read from code, not config); [E17-testing](../foundations/E17-testing.md) — the per-code fixtures and the [REQ-TST-05](../foundations/E17-testing.md#6-conventions) fix-parity rule this feature is bound to.
+- **Depends on:** [constitution](../constitution.md) — P1 (static analysis), P4 (no edit over a guess), P5 (companion, not replacement), and the §4.6 words-not-color rule the action titles honor; [E01-architecture](../foundations/E01-architecture.md) — REQ-ARCH-15, the lazy code-action resolution and `resolveProvider = true` this feature implements; [E07-data-model](../foundations/E07-data-model.md) — the model/column/relationship facts and the index the edits resolve against; [E16-conventions](../foundations/E16-conventions.md) — the `FixKind` enum every action wears and the `Diff` advice the resolved fix's preview is rendered from; [E30-extraction-and-indexing](../foundations/E30-extraction-and-indexing.md) — the base/forward-ref/type resolution several fixes rely on; [E15-app-config](../foundations/E15-app-config.md) — the diagnostics config that gates which findings (and thus which fixes) are active; the `SQLA-H107` scaffold inserts a conventional default `naming_convention` map (read from code, not config); [E17-testing](../foundations/E17-testing.md) — the per-code fixtures and the [REQ-TST-05](../foundations/E17-testing.md#6-conventions) fix-parity rule this feature is bound to.
 - **Related:** [F01-orm-correctness-diagnostics](F01-orm-correctness-diagnostics.md) — the correctness findings (`SQLA-W101`/`W201`/`W402`/`W403`/`H406`/`H407`/`W409`) these fixes resolve; [F02-best-practice-lints](F02-best-practice-lints.md) — the best-practice findings (`SQLA-H106`/`H107`/`H202`/`W203`/`H205`/`W304`/`W305`/`W413`/`W501`/`W502`/`W504`/`I505`) these fixes resolve; [F14-cli-linter](F14-cli-linter.md) — the `check --fix` front-end that shares this fix engine; [F07-rename](F07-rename.md) — the workspace rename capability, distinct from these fixed edits; [E29-e2e-testing](../foundations/E29-e2e-testing.md) — the harness and the relink→empty-publish journey that proves an applied fix clears its finding.
 
 ## 16. Changelog
 
+- **2026-06-18** — v0.3: adapted two Biome patterns. Tagged every action with a `FixKind` (the Safe / Unsafe enum owned by [E16](../foundations/E16-conventions.md)) and added the FixKind column to the catalog plus a dedicated Safe / Unsafe mapping table with rationale (REQ-CA-1A); `check --fix` now applies Safe only, `check --fix --unsafe` opts into the rest, and parity (REQ-CA-02) holds per FixKind. Added lazy code-action resolution (REQ-CA-1B): `textDocument/codeAction` returns metadata only and the `WorkspaceEdit` is built on `codeAction/resolve` (`resolveProvider = true`, [E01 REQ-ARCH-15](../foundations/E01-architecture.md#5-detailed-specification)), with the preview rendered from the E16 `Diff` advice. Reworked the Data Shapes to show the metadata→resolve two-stage response. Extended the test plan, E2E scenarios (E2E-12…E2E-15), acceptance criteria (AC-06, AC-07), and requirement coverage to cover Safe auto-apply, Unsafe skip without `--unsafe`, and resolve-produces-the-edit. Added E01 and E16 to Depends-on.
 - **2026-06-18** — v0.2: the `SQLA-H107` scaffold (REQ-CA-17) now inserts a conventional default `naming_convention` map; the dropped `naming_convention` config key ([E15](../foundations/E15-app-config.md) v0.2) is no longer a source. Reworded the E15 dependency.
 - **2026-06-17** — Initial draft. Ported the four legacy code actions (generate `__tablename__`, fix `back_populates`, add FK column, proactive `back_populates`) to the `SQLA-` codes, added a quick fix per fixable F01/F02 lint, mapped each fix to the diagnostic it resolves, and pinned the byte-identical parity with `check --fix` ([E17 REQ-TST-05](../foundations/E17-testing.md#6-conventions)). Added the quick-fix menu and generate-`__tablename__` before/after mockups, the decision flowchart, the data shapes for single- and two-file edits, and the testing, E2E, and non-functional sections.

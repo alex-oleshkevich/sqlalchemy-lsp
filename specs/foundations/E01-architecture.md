@@ -2,7 +2,7 @@
 
 > **Status:** Draft
 >
-> **Version:** 0.1   ·   **Last updated:** 2026-06-17
+> **Version:** 0.2   ·   **Last updated:** 2026-06-18
 >
 > **Purpose:** The system shape: one Rust binary, a two-pass index over Python source and Alembic migrations, and pure-function features. Read this before any feature spec.
 >
@@ -22,7 +22,8 @@ This spec covers:
 - The two-pass pipeline — per-file extraction, then a debounced workspace relink.
 - File detection — indicator-gated scanning, with force-parse on open.
 - Pure-function feature dispatch and the no-stale-data guarantee.
-- Protocol conduct — ordering, encoding, diagnostics, progress, refresh, and file watching.
+- The single-traversal diagnostics engine — one tree walk, a rule registry, span-ordered signals, suppression at flush.
+- Protocol conduct — ordering, encoding, diagnostics, progress, refresh, file watching, and lazy code-action resolution.
 - Measurable performance budgets, tested against the `large-workspace` fixture.
 
 ## 2. Non-Goals / Out of Scope
@@ -156,6 +157,28 @@ The handler keeps the index honest, with **open-buffer-overlay precedence** as t
 
 Renames arrive as delete + create and need no special handling. Config-file changes trigger config re-resolution before the relink.
 
+**REQ-ARCH-15 — Code actions resolve lazily; the edit is computed only when chosen.**
+
+A single line of source can carry several fixable diagnostics, and a large file can carry hundreds. Computing the full `WorkspaceEdit` for every fix up front — for actions the user will mostly never click — burns the budget for nothing. So the server splits the work in two, the way the LSP code-action lifecycle is designed for.
+
+The server advertises `codeActionProvider.resolveProvider = true`. A `textDocument/codeAction` request then returns only lightweight metadata for each action: its `title`, its `kind`, and the `diagnostic` it fixes. The heavy part — the actual `WorkspaceEdit` — is left empty. Building that edit is deferred to `codeAction/resolve`, which the client sends only for the one action the user actually selects.
+
+The effect is that listing the fixes on a line is cheap, and we compute exactly one edit per accepted fix instead of one per offered fix. The fixes themselves — what each one rewrites — are owned by [F11](../features/F11-code-actions.md); the Diff preview that shows a fix before it is applied is described in [E16](E16-conventions.md).
+
+### 5.7 The diagnostics engine
+
+Features are pure functions (REQ-ARCH-07), but diagnostics are special: many rules need to look at the same file, and the naive shape — every rule walking the whole tree itself — re-traverses the source once per rule. With dozens of rules that work balloons fast. We borrow Biome's analyzer shape instead and walk the tree once, fanning each node out to the rules that asked for it.
+
+**REQ-ARCH-16 — The diagnostics engine walks the tree once and dispatches to a rule registry.**
+
+A single traversal visits every node of a file's tree-sitter tree exactly once. At each node, the engine consults a **rule registry** keyed by node kind and dispatches the node to every rule registered for that kind — a query-matcher fan-out, not a per-rule re-walk. A rule that only cares about `call` nodes is never woken for anything else.
+
+Rules don't return diagnostics directly; they emit **signals** into a queue. Each signal is a finding plus its source span. The queue is ordered by that span, so findings come out in source order no matter which rule or which node produced them. As the queue is flushed, suppression is applied: a signal covered by a `# noqa` comment is dropped at flush time, in one place, rather than each rule checking for its own suppression. The flushed, suppression-filtered signals become the file's published diagnostics.
+
+This is the engine behind both halves of the pipeline. Pass 1's per-file diagnostics and the relink's cross-file checks (REQ-ARCH-03, REQ-ARCH-04) both run through this one traversal, which is what keeps a relink inside the §8 performance budget — the alternative, N rules each re-walking the tree, would not fit. It composes cleanly with the two passes: the per-file rules run during Pass 1's single-file parse, and the cross-file rules run during Pass 2 against the rebuilt index.
+
+The engine owns *how* rules run; it does not own the rules. Each rule's definition, its metadata, and its stable code live in the diagnostic catalogs ([F01](../features/F01-orm-correctness-diagnostics.md), [F02](../features/F02-best-practice-lints.md)) and the central code registry ([E15](E15-app-config.md)). The engine reads that registry to know which rules exist and which node kinds each one wants; the diagnostic model those signals conform to is owned by [E16](E16-conventions.md).
+
 ## 6. Examples & Use Cases
 
 You add a `bio` column to `Post` in `models/post.py`. Pass 1 re-extracts that one file on each keystroke — cheap and single-file — and the cross-file checks run against the existing index. Meanwhile a teammate's `git pull` lands a renamed `User.full_name` column on disk. The file watcher fires on `models/user.py`, Pass 1 re-reads it, the debounced Pass 2 rebuilds the index, and the `back_populates` and FK references from `Post` re-resolve against the new `User` — clearing or raising diagnostics in `post.py`, a file you never opened. The generation counter ensures that if you keep typing during the relink, the stale Pass 2 is discarded and a fresh one runs.
@@ -225,8 +248,9 @@ flowchart LR
 ## 11. Cross-References
 
 - **Depends on:** [constitution](../constitution.md) — principles P1, P3, P4, P6, and the "one engine, two front-ends" engineering principle, all cited above.
-- **Related:** [E07-data-model](E07-data-model.md) — the fact and index types Pass 2 builds; [E30-extraction-and-indexing](E30-extraction-and-indexing.md) — the extraction rules, indicator set, and reference resolution; [E03-tech-stack](E03-tech-stack.md) — the framing crate, tree-sitter, and `notify`; [E15-app-config](E15-app-config.md) — the watched config files and resolution; [E16-conventions](E16-conventions.md) — the full error/resilience contract; [E17-testing](E17-testing.md) — the performance budgets and `large-workspace`/`non-ascii` fixtures; [E29-e2e-testing](E29-e2e-testing.md) — the protocol-conformance journeys that pin this conduct; [F10-inlay-hints](../features/F10-inlay-hints.md) — the refresh consumer; [F14-cli-linter](../features/F14-cli-linter.md) — the headless front-end sharing this pipeline.
+- **Related:** [E07-data-model](E07-data-model.md) — the fact and index types Pass 2 builds; [E30-extraction-and-indexing](E30-extraction-and-indexing.md) — the extraction rules, indicator set, and reference resolution; [E03-tech-stack](E03-tech-stack.md) — the framing crate, tree-sitter, and `notify`; [E15-app-config](E15-app-config.md) — the watched config files, resolution, and the code registry the diagnostics engine reads; [E16-conventions](E16-conventions.md) — the full error/resilience contract, the diagnostic model signals conform to, and the Diff preview for fixes; [E17-testing](E17-testing.md) — the performance budgets and `large-workspace`/`non-ascii` fixtures; [E29-e2e-testing](E29-e2e-testing.md) — the protocol-conformance journeys that pin this conduct; [F01-orm-correctness-diagnostics](../features/F01-orm-correctness-diagnostics.md) and [F02-best-practice-lints](../features/F02-best-practice-lints.md) — the rule definitions the engine dispatches; [F10-inlay-hints](../features/F10-inlay-hints.md) — the refresh consumer; [F11-code-actions](../features/F11-code-actions.md) — the fixes resolved lazily; [F14-cli-linter](../features/F14-cli-linter.md) — the headless front-end sharing this pipeline.
 
 ## 12. Changelog
 
+- **2026-06-18** (v0.2) — Added two patterns adapted from Biome. New §5.7 specifies the single-traversal diagnostics engine (REQ-ARCH-16): one tree walk dispatching each node to a rule registry keyed by node kind, rules emitting span-ordered signals, `# noqa` suppression applied at flush — replacing the per-rule re-walk and serving both Pass 1 and the relink inside the §8 budget. New REQ-ARCH-15 in §5.6 specifies lazy code-action resolution: `codeActionProvider.resolveProvider = true`, with `textDocument/codeAction` returning action metadata and the `WorkspaceEdit` computed only on `codeAction/resolve`. Cross-linked [F01](../features/F01-orm-correctness-diagnostics.md), [F02](../features/F02-best-practice-lints.md), [F11](../features/F11-code-actions.md), [E15](E15-app-config.md), and [E16](E16-conventions.md).
 - **2026-06-17** — Initial draft: the single stdio binary sharing one pipeline across `lsp` and `check`, static-analysis-only operation, the two-pass pipeline with a ~300 ms debounce and generation counter, indicator-gated file detection, pure-function feature dispatch, the no-stale-data guarantee, protocol conduct (per-URI ordering + `spawn_blocking`, UTF-8/16 negotiation, push+pull diagnostics, non-blocking `initialize`, refresh-after-relink, mandatory file watching with open-buffer-overlay precedence), the measurable performance budgets, and the two-pass pipeline diagram. Records [ADR-005](../decisions/ADR-005-stdio-only-transport.md) (stdio-only) and [ADR-006](../decisions/ADR-006-debounce-and-generation-counter.md) (debounce + generation counter).

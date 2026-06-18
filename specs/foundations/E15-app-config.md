@@ -2,7 +2,7 @@
 
 > **Status:** Draft
 >
-> **Version:** 0.2   ·   **Last updated:** 2026-06-18
+> **Version:** 0.3   ·   **Last updated:** 2026-06-18
 >
 > **Purpose:** Where the server's settings come from, how it finds your models and migrations when you say nothing, every config key it reads, the `SQLA-` diagnostic-code scheme, and how to silence a finding inline with `# noqa`.
 >
@@ -88,9 +88,10 @@ These are every setting the server reads, with its type, default, and what it do
 | `model_paths` | `string[]` | `[]` (auto-discover) | Extra directories to scan for models ([E30](E30-extraction-and-indexing.md)). |
 | `alembic_path` | `string` | `null` (auto-discover) | Path to the Alembic migration root ([F13](../features/F13-alembic-support.md)). |
 | `target_dialect` | `string` | `null` | SQL dialect (`postgresql`, `mysql`, `sqlite`, …) gating dialect-sensitive rules like `SQLA-H206`. |
-| `diagnostics.select` | `string[]` | `["all"]` | Diagnostic codes (or `all`) to enable. |
-| `diagnostics.ignore` | `string[]` | `[]` | Diagnostic codes to disable, applied after `select`. |
-| `diagnostics.severity` | `map` | `{}` | Per-code severity override, e.g. `{ "SQLA-H205" = "warning" }`. |
+| `diagnostics.select` | `string[]` | `["recommended"]` | Codes, class tokens (`SQLA-3xx`), or a preset (`recommended`/`all`/`none`) to enable (§5.8). |
+| `diagnostics.ignore` | `string[]` | `[]` | Codes or class tokens to disable, applied after `select` (§5.8). |
+| `diagnostics.severity` | `map` | `{}` | Per-code or per-class severity override, e.g. `{ "SQLA-H205" = "warning" }` (§5.8). |
+| `overrides` | `object[]` | `[]` | Glob-scoped config layers; each has `includes` and its own `diagnostics` block (§5.9). |
 | `log_level` | `string` | `null` | `error` … `trace`; controls `tracing` verbosity. |
 | `log_file` | `string` | `null` (stderr) | Optional log-file path; logs never go to stdout ([E16](E16-conventions.md)). |
 
@@ -113,13 +114,13 @@ So `SQLA-W303` is the warning-by-default FK-type-mismatch rule in the foreign-ke
 
 The code never changes when you override a rule's severity. `SQLA-H205` stays `SQLA-H205` even after you bump it from a hint to a warning — the `H` records the *default*, not the current level. This is what lets you write `# noqa: SQLA-H205` and have it keep working regardless of how anyone re-levels the rule.
 
-**REQ-CFG-07 — Default-on policy.**
+**REQ-CFG-07 — Default-on policy and the two preview rules.**
 
-Every rule defaults **on** except two of the hardest heuristics: `SQLA-H416` (viewonly-write) and `SQLA-H602` (association-proxy-misconfigured), which default off because they false-positive too readily. To enable an off-by-default rule, name it in `diagnostics.select`.
+Every rule defaults **on** except two of the hardest heuristics: `SQLA-H416` (viewonly-write) and `SQLA-H602` (association-proxy-misconfigured), which default off because they false-positive too readily. These two are the **preview** rules — the `recommended` preset (the default for `diagnostics.select`, §5.8) turns on every rule *except* these. To enable a preview rule, name it explicitly in `diagnostics.select`, or opt into the whole catalog with the `all` preset.
 
 **REQ-CFG-08 — Resolution order: select, then ignore, then severity.**
 
-The server resolves the active rule set in a fixed order. It starts from `select` (default `["all"]`), subtracts `ignore`, then applies `severity` overrides to whatever survives. An unknown code in `select` or `ignore` is a config *warning*, not a hard error — a typo shouldn't silence the whole server. This is the same model the `check` CLI exposes as `--select`/`--ignore` ([F14](../features/F14-cli-linter.md)), reading from this same resolved config.
+The server resolves the active rule set in a fixed order. It starts from `select` (default `["recommended"]`), subtracts `ignore`, then applies `severity` overrides to whatever survives. Within each step, a preset, a class token, and a specific code are resolved by specificity (§5.8). An unknown code or class token in `select` or `ignore` is detected the same way everywhere, but the two front-ends respond differently by design: the **LSP server logs a config warning and ignores the bad entry**, never dying — a typo must not silence the whole server mid-session. The **`check` CLI treats it as a fatal usage error (exit 2)** so a typo can't quietly disable a check in CI ([F14](../features/F14-cli-linter.md)). Both read this same resolved config; only the reaction to a bad entry differs.
 
 ### 5.6 Inline suppression with `# noqa`
 
@@ -146,6 +147,69 @@ Config is live: edit a config file and the server catches up without a restart.
 **REQ-CFG-11 — Config changes re-resolve and re-index.**
 
 The three config files are watched. A change to any of them re-runs the full resolution of §5.1 and triggers a workspace re-index ([E01](E01-architecture.md)), so a newly ignored rule disappears from diagnostics and a newly added `model_paths` entry gets scanned — all without reopening a file.
+
+### 5.8 Group-level config, class tokens, and presets
+
+You rarely want to toggle rules one at a time. Because every code embeds a class digit (§5.5), you can configure a whole diagnostic class in one token, or reach for a named preset that covers the catalog at once.
+
+**REQ-CFG-12 — Class tokens and presets in `select`/`ignore`/`severity`.**
+
+`select`, `ignore`, and `severity` accept three kinds of target, from broadest to most specific:
+
+- A **preset** in `select` — one of `recommended`, `all`, or `none`. `recommended` (the default) turns on every rule except the two preview rules (REQ-CFG-07); `all` turns on the whole catalog including previews; `none` starts from an empty set you then build up with explicit codes or class tokens.
+- A **class token** — the severity letter dropped and the rule number replaced with `xx`, e.g. `SQLA-3xx` means "all foreign-key rules" and `SQLA-7xx` means "all Alembic rules." A class token in `select` enables the group, in `ignore` disables it, and in `severity` re-levels every rule in it.
+- A **specific code** — a single rule like `SQLA-W303`, exactly as before.
+
+Specificity decides who wins when targets overlap: **a specific code overrides a class token overrides a preset.** So `select = ["none", "SQLA-3xx"]` with `ignore = ["SQLA-W303"]` turns on every foreign-key rule but that one. The same rule applies inside `severity` — a per-code entry beats a per-class entry for the codes it names.
+
+To warn on every relationship rule while leaving the rest at their defaults, name the class in `severity`:
+
+```toml
+# pyproject.toml
+[tool.sqlalchemy-lsp.diagnostics]
+severity = { "SQLA-4xx" = "warn" }
+```
+
+Every `4xx` relationship rule is now reported at warning severity. A later per-code entry — say `severity = { "SQLA-4xx" = "warn", "SQLA-H401" = "error" }` — pins `SQLA-H401` to error while its classmates stay at warning, because the specific code wins.
+
+### 5.9 Per-glob overrides
+
+The same rules rarely fit every corner of a project. Generated migrations want looser linting; your hand-written model layer wants it stricter. The `overrides` array layers glob-scoped config on top of the base.
+
+**REQ-CFG-13 — Glob-scoped `overrides` layered on the base config.**
+
+`overrides` is an array. Each entry has an `includes` list of glob patterns and its own `diagnostics` block — the same `select`/`ignore`/`severity` shape (with class tokens and presets, §5.8) as the top level. For a given file, the base `diagnostics` config resolves first, then every override whose `includes` matches the file's path is applied **on top**, in array order. Later-matching overrides win per key — an override's `severity` entry for a code beats an earlier one, and its `ignore` adds to what came before.
+
+The `clean-blog` project keeps its migrations forgiving and its models exacting. Generated migrations under `migrations/**` shouldn't trip the manual-`server_default` warning, while everything under `models/**` should treat naive datetimes as an error:
+
+```toml
+# pyproject.toml
+[[tool.sqlalchemy-lsp.overrides]]
+includes = ["migrations/**"]
+diagnostics.ignore = ["SQLA-W104"]
+
+[[tool.sqlalchemy-lsp.overrides]]
+includes = ["models/**"]
+diagnostics.severity = { "SQLA-H205" = "error" }
+```
+
+A file at `migrations/0007_add_post.py` resolves the base config and then drops `SQLA-W104`. A file at `models/post.py` resolves the base config and then bumps `SQLA-H205` to error. A file matched by neither — say `app/main.py` — keeps the base config untouched. The CLI ([F14](../features/F14-cli-linter.md)) applies the identical per-glob layering, so editor and CI agree on which rules fire where.
+
+### 5.10 The central code registry
+
+Every code the server knows about lives in one place. The catalogs developers read and the toggles this spec defines all draw from the same table, so they can never drift apart.
+
+**REQ-CFG-14 — One authoritative registry is the source of truth.**
+
+There is a single in-code registry of every diagnostic code, and it is the *only* place a code is defined. Each entry carries the code's full metadata: the code itself, its rule name, its default severity, its group (the `CLASS` digit, §5.5), whether it is on or off by default, its `FixKind`, and its tags. The `FixKind` and tag model are owned by [E16](E16-conventions.md) — the registry references that model rather than redefining it.
+
+Everything downstream is generated from this registry, never hand-maintained alongside it:
+
+- The rule catalogs in [F01](../features/F01-orm-correctness-diagnostics.md), [F02](../features/F02-best-practice-lints.md), and [F13](../features/F13-alembic-support.md) are projections of the registry.
+- The class-token and preset expansion of §5.8 reads the registry to know which codes a token covers and which are on by default.
+- The published docs are generated from it too.
+
+This is what keeps the default-on policy honest: the registry is where `SQLA-H416` and `SQLA-H602` are marked as the two **preview** (off-by-default) rules (REQ-CFG-07), so the `recommended` preset, the catalogs, and the docs all report the same two without anyone keeping three lists in sync.
 
 ## 6. Examples & Use Cases
 
@@ -199,10 +263,14 @@ The resolved config the server holds in memory has this shape. It is the single 
   "alembic_path": "migrations",
   "target_dialect": "postgresql",
   "diagnostics": {
-    "select": ["all"],
+    "select": ["recommended"],
     "ignore": ["SQLA-H205"],
-    "severity": { "SQLA-W501": "error" }
+    "severity": { "SQLA-4xx": "warn", "SQLA-W501": "error" }
   },
+  "overrides": [
+    { "includes": ["migrations/**"], "diagnostics": { "ignore": ["SQLA-W104"] } },
+    { "includes": ["models/**"], "diagnostics": { "severity": { "SQLA-H205": "error" } } }
+  ],
   "log_level": null,
   "log_file": null
 }
@@ -212,10 +280,15 @@ The resolved config the server holds in memory has this shape. It is the single 
 
 - No config files and no recognizable model/migration layout → the server runs, indexes nothing it can find, and stays silent. Opening a model file still works once discovery picks it up.
 - Conflicting keys across the two files → the highest-precedence source wins *per key*, so `sqlalchemy-lsp.toml` can override one `pyproject.toml` key while inheriting the rest (§5.1).
-- An unknown code in `select`/`ignore` → a config warning, never a hard failure; the rest of the config still resolves (REQ-CFG-08).
+- An unknown code in `select`/`ignore` → in the **server**, a config warning, never a hard failure; the rest of the config still resolves. In the **CLI**, exit 2 (REQ-CFG-08; [F14](../features/F14-cli-linter.md)).
 - A `# noqa: SQLA-H205` on a line that has no such finding → reported as `SQLA-W901 unused-noqa` (REQ-CFG-10).
 - An off-by-default rule (`SQLA-H416`/`SQLA-H602`) named in `ignore` but never in `select` → stays off; ignoring an already-off rule is a no-op, not an error.
 - `target_dialect` unset → dialect-sensitive rules like `SQLA-H206` stay silent rather than guessing a dialect (P4).
+- A class token and a specific code both target one rule (`select = ["SQLA-3xx"]`, `ignore = ["SQLA-W303"]`) → the specific code wins, so `SQLA-W303` stays off while the rest of `3xx` is on (REQ-CFG-12).
+- An unknown class token (`SQLA-8xx`, no such class) → handled like any unknown code: a server-side config warning, a CLI exit 2 (REQ-CFG-08, REQ-CFG-12).
+- A file matched by two overlapping overrides → both apply in array order, later-matching wins per key (REQ-CFG-13).
+- A file matched by no override → it keeps the base config, untouched (REQ-CFG-13).
+- A catalog and the registry disagree → impossible by construction; the catalogs are generated from the registry, never hand-edited (REQ-CFG-14).
 
 ## 10. Testing
 
@@ -242,6 +315,10 @@ Target: **100% of this spec's behavior is covered.** Every `REQ-CFG-NN` maps to 
 | `# noqa: SQLA-E501` (foreign namespace) does not suppress an SQLA finding | unit | REQ-CFG-09 |
 | Unused `# noqa` → `SQLA-W901` | integration | REQ-CFG-10 |
 | Editing a config file re-resolves and re-indexes | integration | REQ-CFG-11 |
+| Class token enables/disables a whole group; specific code overrides class overrides preset | unit | REQ-CFG-12 |
+| `recommended`/`all`/`none` presets resolve to the expected rule sets | unit | REQ-CFG-12 |
+| Per-glob override layers on the base; later-matching override wins per key; unmatched file untouched | unit | REQ-CFG-13 |
+| Catalogs and class/preset expansion derive from the central registry | unit | REQ-CFG-14 |
 
 ### 10.3 Requirement coverage
 
@@ -258,13 +335,17 @@ Target: **100% of this spec's behavior is covered.** Every `REQ-CFG-NN` maps to 
 | REQ-CFG-09 | three-form suppression + foreign-namespace test |
 | REQ-CFG-10 | unused-noqa test |
 | REQ-CFG-11 | config-watch re-index test |
+| REQ-CFG-12 | class-token / preset / specificity test |
+| REQ-CFG-13 | per-glob override layering test |
+| REQ-CFG-14 | registry-as-source-of-truth generation test |
 
 ## 11. Cross-References
 
 - **Depends on:** [constitution](../constitution.md) — the `SQLA-` scheme (§4.2) and the engineering principles this config honors; [E01-architecture](E01-architecture.md) — config files are watched and a change triggers re-index.
-- **Related:** [F01](../features/F01-orm-correctness-diagnostics.md), [F02](../features/F02-best-practice-lints.md), [F13](../features/F13-alembic-support.md) — the rule catalogs toggled here; [F14-cli-linter](../features/F14-cli-linter.md) — `--select`/`--ignore` parity and headless `# noqa` honoring; [E16-conventions](E16-conventions.md) — the never-log-to-stdout rule `log_file` honors; [E30-extraction-and-indexing](E30-extraction-and-indexing.md) — consumes the discovered `model_paths`.
+- **Related:** [F01](../features/F01-orm-correctness-diagnostics.md), [F02](../features/F02-best-practice-lints.md), [F13](../features/F13-alembic-support.md) — the rule catalogs toggled here, generated from the central registry (REQ-CFG-14); [F14-cli-linter](../features/F14-cli-linter.md) — `--select`/`--ignore` parity that honors class tokens and presets (§5.8), per-glob overrides (§5.9), and headless `# noqa`; [E16-conventions](E16-conventions.md) — the `FixKind`/tag model the registry references (REQ-CFG-14) and the never-log-to-stdout rule `log_file` honors; [E30-extraction-and-indexing](E30-extraction-and-indexing.md) — consumes the discovered `model_paths`.
 
 ## 12. Changelog
 
+- **2026-06-18** — v0.3: added three capabilities adapted from Biome. Glob-scoped `overrides` (§5.9, REQ-CFG-13) layer `diagnostics` config on top of the base per file path. `select`/`ignore`/`severity` now accept **class tokens** (`SQLA-3xx`) and `select` accepts the **presets** `recommended` (new default), `all`, and `none`, with specificity code > class > preset (§5.8, REQ-CFG-12); the default `diagnostics.select` changed from `["all"]` to `["recommended"]`. Added a single authoritative **code registry** as the source of truth from which the F01/F02/F13 catalogs and docs are generated (§5.10, REQ-CFG-14), referencing the `FixKind`/tag model in [E16](E16-conventions.md); `SQLA-H416`/`SQLA-H602` are now framed as the two "preview" off-by-default rules. The §5.5 code scheme and §5.6 `# noqa` rules are unchanged.
 - **2026-06-18** — v0.2: removed the `naming_convention` config key. The naming convention is now read **only from the resolved declarative base's `MetaData`** in code ([E30](E30-extraction-and-indexing.md)); `SQLA-H106`/`SQLA-H107` and the F11 scaffold no longer consult config. Trade-off: a project that sets its convention in Alembic's `env.py` rather than on the base is no longer seen, so `SQLA-H107` may false-positive there — disable the rule or use `# noqa` (see [F02](../features/F02-best-practice-lints.md) §10).
 - **2026-06-17** — Initial draft: three-source per-key config, model/Alembic auto-discovery, the key reference, the `SQLA-<SEV><CLASS><NN>` scheme with default-on policy, `# noqa` suppression and the `SQLA-W901` meta-finding, and config-watch re-resolution.

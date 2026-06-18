@@ -98,4 +98,5 @@ When you author or change a spec, update its row here in the same edit. When a s
 
 ## Changelog
 
+- **2026-06-18** — Suite refinements: dropped the `naming_convention` config key (read from code); generalized alias resolution in `E30` (+ alias test matrix/fixtures in `E17`); adapted seven patterns from Biome — safe/unsafe fixes (`F11`/`F14`), single-traversal diagnostics engine + lazy code-action resolve (`E01`), the diagnostic model with structured advices, tags, and `FixKind` (`E16`), config `overrides`/group-tokens/presets + central code registry (`E15`), and `Deprecated` LSP tags on modernization lints (`F02`). Version bumps across E01/E15/E16/E17/E30 and F01/F02/F11/F14.
 - **2026-06-17** — Initial index: meta + product approved; foundations (incl. appended `E30`), 16 features, and 7 ADRs registered as Draft.

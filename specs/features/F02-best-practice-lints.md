@@ -2,7 +2,7 @@
 
 > **Status:** Draft
 >
-> **Version:** 0.2   ·   **Last updated:** 2026-06-18
+> **Version:** 0.3   ·   **Last updated:** 2026-06-18
 >
 > **Purpose:** The configurable best-practice lint set — the rules that flag SQLAlchemy code that *works* but invites a bug, a deprecation, or a maintenance headache. Every rule ships on by default except two of the hardest heuristics.
 >
@@ -390,6 +390,12 @@ These six rules sit alongside F01's relationship correctness core (`SQLA-E401`, 
 
 These rules nudge code toward the SQLAlchemy 2.0 idiom and the project's conventions. This class is wholly F02's.
 
+Three of these rules flag code that is *on its way out* of SQLAlchemy, not merely unfashionable — a `backref`, a `declarative_base()` call, a `session.query(...)`. LSP has a tag for exactly that, and we use it so the editor can show the reader at a glance.
+
+**REQ-LINT-19b — The three modernization rules carry the `Deprecated` diagnostic tag.**
+
+`SQLA-W501` (legacy-backref), `SQLA-W502` (legacy-declarative-base), and `SQLA-I503` (legacy-query-api) each set the `Deprecated` tag on the published `Diagnostic`, per the tag model in [E16](../foundations/E16-conventions.md). An editor that honors the tag renders these findings **struck through** — the legacy construct is shown crossed out in the source, so the reader sees it is deprecated before they even read the message. The tag travels in `Diagnostic.tags`; it is additive to the code, severity, and message, and never replaces them. No other F02 rule sets `Deprecated` — these three are the only ones flagging a construct SQLAlchemy itself is retiring. (The `Unnecessary` tag, the other LSP tag in the [E16](../foundations/E16-conventions.md) model, is used by no F02 rule.)
+
 **REQ-LINT-19 — `SQLA-W501` legacy-backref.**
 
 - **Default:** warning · **on**.
@@ -409,6 +415,7 @@ These rules nudge code toward the SQLAlchemy 2.0 idiom and the project's convent
   ```
 
 - **Detectability:** high. It reads whether `backref=` is present on the relationship call. F11 offers a quick-fix that rewrites the `backref` into a `back_populates` pair, adding the counterpart attribute on the target model.
+- **Tag:** `Deprecated` (REQ-LINT-19b; [E16](../foundations/E16-conventions.md)) — the editor renders the finding struck through.
 
 **REQ-LINT-20 — `SQLA-W502` legacy-declarative-base.**
 
@@ -427,6 +434,7 @@ These rules nudge code toward the SQLAlchemy 2.0 idiom and the project's convent
   ```
 
 - **Detectability:** high. It detects the `declarative_base()` call at module scope. F11 offers a quick-fix that rewrites it to the class form.
+- **Tag:** `Deprecated` (REQ-LINT-19b; [E16](../foundations/E16-conventions.md)) — the editor renders the finding struck through.
 
 **REQ-LINT-21 — `SQLA-I503` legacy-query-api.**
 
@@ -444,6 +452,7 @@ These rules nudge code toward the SQLAlchemy 2.0 idiom and the project's convent
   ```
 
 - **Detectability:** medium. It matches `session.query(...)` and `<Model>.query` access patterns syntactically. Because the rewrite changes the surrounding call chain substantially, there's no safe F11 quick-fix; info severity reflects that it's a nudge, not a demand.
+- **Tag:** `Deprecated` (REQ-LINT-19b; [E16](../foundations/E16-conventions.md)) — the editor renders the finding struck through.
 
 **REQ-LINT-22 — `SQLA-W504` missing-mapped-annotation.**
 
@@ -743,6 +752,7 @@ Driven by `pytest-lsp` over stdio against the built binary, these journeys prove
 | E2E-12 | Edit a triggering line to its suggested fix | happy | The finding clears via an explicit (re)publish |
 | E2E-13 | `check` over a lint fixture vs the server's publish | happy | Identical code/file/range (CLI/server parity) |
 | E2E-14 | Half-typed model with `ERROR` nodes plus a clean lintable column | error | Clean column's lint fires; no crash |
+| E2E-15 | Open a `SQLA-W501` / `SQLA-W502` / `SQLA-I503` fixture | happy | The published diagnostic carries the `Deprecated` tag in `Diagnostic.tags` (REQ-LINT-19b) |
 
 ### 12.3 Acceptance criteria & Definition of Done
 
@@ -759,6 +769,7 @@ The §12.2 scenarios, written Given/When/Then, are this feature's acceptance cri
 | AC-07 | A `# noqa: SQLA-<code>` on the triggering line | the client opens the file | that code is suppressed on that line only |
 | AC-08 | A `# noqa` that matches no finding | the client opens the file | `SQLA-W901 unused-noqa` is published |
 | AC-09 | A broken lint fixture | `sqlalchemy-lsp check` runs and the server publishes for the same workspace | the two emit identical code, file, and range |
+| AC-10 | A `legacy-backref`, `legacy-declarative-base`, or `legacy-query-api` fixture | the client opens it | the published diagnostic carries the `Deprecated` tag so the editor strikes it through |
 
 **Definition of Done:** every `REQ-LINT-NN` has a passing test (§11.4), every acceptance scenario above passes, the per-code fixtures exist in [E17](../foundations/E17-testing.md), CLI/server parity holds ([E17 REQ-TST-05](../foundations/E17-testing.md#6-conventions)), and the §13.1 security posture is verified.
 
@@ -789,5 +800,6 @@ Accessibility (§13.2) is N/A — F02 is a pure-data diagnostics feature with no
 
 ## 17. Changelog
 
+- **2026-06-18** — v0.3: The three modernization rules `SQLA-W501` (legacy-backref), `SQLA-W502` (legacy-declarative-base), and `SQLA-I503` (legacy-query-api) now carry the LSP `Deprecated` diagnostic tag ([E16](../foundations/E16-conventions.md)), so editors render them struck through. Added REQ-LINT-19b and the three per-rule **Tag** notes (§5.6), an E2E scenario (E2E-15) and acceptance criterion (AC-10) asserting the published diagnostic includes the tag.
 - **2026-06-18** — v0.2: `SQLA-H106`/`SQLA-H107` now read the `naming_convention` **only from the resolved base's `MetaData`** in code; the `naming_convention` config key was dropped from [E15](../foundations/E15-app-config.md). Added the `env.py`-configured-convention false-positive edge case (§10) and OQ-LINT-2 (§15).
 - **2026-06-17** — Initial draft. Specified the 27 best-practice lints across structure (`SQLA-W104`/`H106`/`H107`), columns & types (`H202`/`W203`/`W204`/`H205`/`H206`/`I207`), foreign keys (`W304`/`W305`), relationships (`W411`/`H412`/`W413`/`H414`/`H415`/`H416`), modernization (`W501`/`W502`/`I503`/`W504`/`I505`/`I506`), and ORM extensions (`H601`/`H602`/`H603`), each with a `REQ-LINT-NN`, default severity/state, trigger, message, example, and detectability notes. Recorded the default-on-except-two policy ([ADR-003](../decisions/ADR-003-comprehensive-lints-defaults.md)), the F01 cross-reference boundary, the per-rule test plan with §11.4 coverage, and the end-to-end journeys including config override, `# noqa` suppression, and CLI/server parity.
