@@ -4,6 +4,7 @@ pub mod config;
 pub mod features;
 pub mod model;
 pub mod parsing;
+pub mod pipeline;
 pub mod server;
 pub mod state;
 pub mod util;

@@ -4,6 +4,7 @@ mod config;
 mod features;
 mod model;
 mod parsing;
+mod pipeline;
 mod server;
 mod state;
 mod util;

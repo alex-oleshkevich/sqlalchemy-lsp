@@ -1,14 +1,13 @@
 use dashmap::DashMap;
-use tower_lsp_server::ls_types::Uri;
+use tower_lsp_server::ls_types::{Diagnostic, Uri};
 use tree_sitter::Tree;
 
 use crate::alembic::MigrationFile;
 use crate::model::types::{Model, ModelLocation};
 
-#[allow(dead_code)]
 pub type FileModels = Vec<Model>;
 
-/// The workspace index: seven DashMaps keyed for one-step lookup by every feature.
+/// The workspace index: keyed for one-step lookup by every feature.
 pub struct WorkspaceState {
     pub file_models: DashMap<Uri, FileModels>,
     pub model_index: DashMap<String, ModelLocation>,
@@ -17,9 +16,12 @@ pub struct WorkspaceState {
     pub parse_trees: DashMap<Uri, Tree>,
     pub migration_files: DashMap<Uri, MigrationFile>,
     pub revision_index: DashMap<String, Uri>,
+    /// Published diagnostics, keyed by URI. Cleared on file delete; empty vec on no findings.
+    pub diagnostics: DashMap<Uri, Vec<Diagnostic>>,
+    /// URIs of files currently open in the editor (unsaved overlay takes precedence over disk).
+    pub open_uris: DashMap<Uri, ()>,
 }
 
-#[allow(dead_code)]
 impl WorkspaceState {
     pub fn new() -> Self {
         Self {
@@ -30,6 +32,8 @@ impl WorkspaceState {
             parse_trees: DashMap::new(),
             migration_files: DashMap::new(),
             revision_index: DashMap::new(),
+            diagnostics: DashMap::new(),
+            open_uris: DashMap::new(),
         }
     }
 
@@ -73,7 +77,8 @@ impl WorkspaceState {
         self.migration_files.insert(uri.clone(), mf);
     }
 
-    /// Remove a file's facts from every map, clearing its diagnostics.
+    /// Remove a file's facts from every map and clear its diagnostics entry.
+    /// Caller is responsible for publishing an empty diagnostics list to the client.
     pub fn remove_file(&self, uri: &Uri) {
         if let Some((_, old_models)) = self.file_models.remove(uri) {
             for model in &old_models {
@@ -90,6 +95,7 @@ impl WorkspaceState {
                 self.revision_index.remove(rev);
             }
         }
+        self.diagnostics.remove(uri);
     }
 }
 
