@@ -188,7 +188,7 @@ impl LanguageServer for Backend {
                     },
                 )),
                 completion_provider: Some(CompletionOptions {
-                    trigger_characters: Some(vec![".".to_string(), "\"".to_string(), "'".to_string()]),
+                    trigger_characters: Some(vec![".".to_string(), "\"".to_string(), "'".to_string(), "(".to_string(), ",".to_string()]),
                     resolve_provider: Some(false),
                     ..Default::default()
                 }),
