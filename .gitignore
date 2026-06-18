@@ -1,0 +1,13 @@
+# Rust
+/target/
+**/*.rs.bk
+
+# Editor extensions build output
+editors/zed/target/
+editors/vscode/node_modules/
+editors/vscode/out/
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
