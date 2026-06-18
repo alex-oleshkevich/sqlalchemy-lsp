@@ -72,7 +72,7 @@ enum Cursor<'a> {
     Relationship { model: &'a Model, rel_name: &'a str },
 }
 
-fn dispatch<'a>(file_models: &'a [Model], pos: Position) -> Option<Cursor<'a>> {
+fn dispatch(file_models: &[Model], pos: Position) -> Option<Cursor<'_>> {
     for model in file_models {
         if pos_in(pos, model.name_range) {
             return Some(Cursor::Model(model));
