@@ -5,6 +5,7 @@ use tower_lsp_server::{Client, ls_types::Uri};
 
 use crate::{
     alembic::{extractor::extract_migration, MigrationFile},
+    features::f01,
     model::types::Model,
     parsing::{
         extractor::extract_models,
@@ -52,7 +53,7 @@ pub async fn run_pass1(uri: Uri, source: String, state: &Arc<WorkspaceState>, cl
             if let Some(mf) = migration {
                 state.update_migration(&uri, mf);
             }
-            // Diagnostic rules are not yet implemented; publish whatever is stored.
+            // Publish the last Pass 2 results for this URI; Pass 2 will recompute shortly.
             let diags = state.diagnostics.get(&uri).map(|d| d.clone()).unwrap_or_default();
             client.publish_diagnostics(uri, diags, None).await;
         }
@@ -71,12 +72,15 @@ pub async fn run_pass1(uri: Uri, source: String, state: &Arc<WorkspaceState>, cl
 /// Called by the debounce task spawned in `schedule_relink`.  The caller has
 /// already verified that the workspace generation matches before calling here.
 pub async fn run_pass2(state: &Arc<WorkspaceState>, client: &Client, supports_inlay_hint_refresh: bool) {
-    // Cross-file reference resolution will be added in F01/F02 feature beads.
-    // For now, republish current diagnostics (initially all empty) for every file.
-
+    // Run F01 diagnostics for every indexed SA model file, store results, then publish.
     let model_uris: Vec<Uri> = state.file_models.iter().map(|e| e.key().clone()).collect();
     for uri in &model_uris {
-        let diags = state.diagnostics.get(uri).map(|d| d.clone()).unwrap_or_default();
+        let diags = if let Some(models) = state.file_models.get(uri) {
+            f01::check_file(&models, state)
+        } else {
+            vec![]
+        };
+        state.diagnostics.insert(uri.clone(), diags.clone());
         client.publish_diagnostics(uri.clone(), diags, None).await;
     }
 
