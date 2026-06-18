@@ -5,7 +5,7 @@ use tower_lsp_server::{Client, ls_types::Uri};
 
 use crate::{
     alembic::{extractor::extract_migration, MigrationFile},
-    features::{f01, f02},
+    features::{alembic_diag, f01, f02},
     model::types::Model,
     parsing::{
         extractor::extract_models,
@@ -86,16 +86,24 @@ pub async fn run_pass2(state: &Arc<WorkspaceState>, client: &Client, supports_in
         client.publish_diagnostics(uri.clone(), diags, None).await;
     }
 
-    // Publish for migration-only files (not already covered by file_models).
-    let migration_uris: Vec<Uri> = state
-        .migration_files
-        .iter()
-        .map(|e| e.key().clone())
-        .filter(|u| !state.file_models.contains_key(u))
-        .collect();
+    // Run Alembic diagnostics for every migration file, then publish.
+    let heads = alembic_diag::compute_head_set(state);
+    let migration_uris: Vec<Uri> =
+        state.migration_files.iter().map(|e| e.key().clone()).collect();
     for uri in &migration_uris {
-        let diags = state.diagnostics.get(uri).map(|d| d.clone()).unwrap_or_default();
-        client.publish_diagnostics(uri.clone(), diags, None).await;
+        let alembic_diags = if let Some(mf) = state.migration_files.get(uri) {
+            alembic_diag::check_migration(&mf, state, &heads)
+        } else {
+            vec![]
+        };
+        // Merge with any SA model diagnostics already computed for this URI.
+        let mut diags = state.diagnostics.get(uri).map(|d| d.clone()).unwrap_or_default();
+        diags.extend(alembic_diags);
+        state.diagnostics.insert(uri.clone(), diags.clone());
+        // Only publish if not already published by the SA model loop above.
+        if !state.file_models.contains_key(uri) {
+            client.publish_diagnostics(uri.clone(), diags, None).await;
+        }
     }
 
     if supports_inlay_hint_refresh {

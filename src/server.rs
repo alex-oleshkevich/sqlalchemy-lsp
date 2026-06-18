@@ -14,19 +14,23 @@ use tower_lsp_server::{
     jsonrpc::Result,
     ls_types::{
         CodeActionKind, CodeActionOptions, CodeActionProviderCapability,
-        DiagnosticOptions, DiagnosticServerCapabilities,
+        CompletionOptions, CompletionParams, CompletionResponse,
+        GotoDefinitionParams, DiagnosticOptions, DiagnosticServerCapabilities,
         DidChangeTextDocumentParams, DidChangeWatchedFilesParams,
         DidChangeWatchedFilesRegistrationOptions, DidCloseTextDocumentParams,
         DidOpenTextDocumentParams, DidSaveTextDocumentParams,
         DocumentDiagnosticParams, DocumentDiagnosticReport, DocumentDiagnosticReportResult,
         FileChangeType, FileSystemWatcher, FullDocumentDiagnosticReport, GlobPattern,
-        InitializeParams, InitializeResult, InitializedParams, MessageType, OneOf,
+        GotoDefinitionResponse, InitializeParams, InitializeResult, InitializedParams,
+        MessageType, OneOf,
         PositionEncodingKind, Registration, RelatedFullDocumentDiagnosticReport,
-        ServerCapabilities, ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind, Uri,
+        ServerCapabilities, ServerInfo, SignatureHelpOptions, SignatureHelpParams,
+        TextDocumentSyncCapability, TextDocumentSyncKind, Uri,
     },
 };
 
 use crate::{
+    features::{completion, definition, signature_help},
     pipeline::{run_pass1, run_pass2},
     state::WorkspaceState,
     util::positions::apply_changes,
@@ -183,6 +187,17 @@ impl LanguageServer for Backend {
                         work_done_progress_options: Default::default(),
                     },
                 )),
+                completion_provider: Some(CompletionOptions {
+                    trigger_characters: Some(vec![".".to_string(), "\"".to_string(), "'".to_string()]),
+                    resolve_provider: Some(false),
+                    ..Default::default()
+                }),
+                signature_help_provider: Some(SignatureHelpOptions {
+                    trigger_characters: Some(vec!["(".to_string(), ",".to_string()]),
+                    retrigger_characters: None,
+                    work_done_progress_options: Default::default(),
+                }),
+                definition_provider: Some(OneOf::Left(true)),
                 ..ServerCapabilities::default()
             },
             offset_encoding: if use_utf8 { Some("utf-8".to_string()) } else { None },
@@ -346,6 +361,35 @@ impl LanguageServer for Backend {
                 },
             }),
         ))
+    }
+
+    // ── Completions ───────────────────────────────────────────────────────────
+
+    async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
+        let uri = params.text_document_position.text_document.uri;
+        let pos = params.text_document_position.position;
+        let source = self.state.file_sources.get(&uri).map(|s| s.clone()).unwrap_or_default();
+        let items = completion::provide_completions(&uri, &source, pos, &self.state);
+        Ok(items.map(CompletionResponse::Array))
+    }
+
+    // ── Signature help ────────────────────────────────────────────────────────
+
+    async fn signature_help(&self, params: SignatureHelpParams) -> Result<Option<tower_lsp_server::ls_types::SignatureHelp>> {
+        let uri = params.text_document_position_params.text_document.uri;
+        let pos = params.text_document_position_params.position;
+        let source = self.state.file_sources.get(&uri).map(|s| s.clone()).unwrap_or_default();
+        Ok(signature_help::provide_signature_help(&uri, &source, pos, &self.state))
+    }
+
+    // ── Go-to-definition ──────────────────────────────────────────────────────
+
+    async fn goto_definition(&self, params: GotoDefinitionParams) -> Result<Option<GotoDefinitionResponse>> {
+        let uri = params.text_document_position_params.text_document.uri;
+        let pos = params.text_document_position_params.position;
+        let source = self.state.file_sources.get(&uri).map(|s| s.clone()).unwrap_or_default();
+        let loc = definition::resolve_definition(&uri, &source, pos, &self.state);
+        Ok(loc.map(GotoDefinitionResponse::Scalar))
     }
 }
 

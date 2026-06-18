@@ -2,6 +2,7 @@ pub mod code_action;
 pub mod completion;
 pub mod definition;
 pub mod diagnostics;
+pub mod alembic_diag;
 pub mod f01;
 pub mod f02;
 pub mod hover;

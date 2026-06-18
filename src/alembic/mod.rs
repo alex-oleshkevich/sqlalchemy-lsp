@@ -30,6 +30,9 @@ pub struct OpCall {
     pub full_range: Range,
     pub table_name: Option<TableRef>,
     pub column_name: Option<ColumnRef>,
+    /// Range of the `None` literal when a constraint op's first positional arg is `None`
+    /// or the call's full_range when the constraint name is absent entirely.
+    pub null_constraint_name_range: Option<Range>,
 }
 
 /// A table name reference inside an op call.
