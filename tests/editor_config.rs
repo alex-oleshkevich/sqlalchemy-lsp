@@ -18,7 +18,9 @@ fn zed_extension_toml_registers_for_python() {
     assert!(doc.get("version").is_some(), "version field required");
     assert_eq!(doc["schema_version"].as_integer().unwrap(), 1);
 
-    let lang_servers = doc.get("language_servers").expect("language_servers section");
+    let lang_servers = doc
+        .get("language_servers")
+        .expect("language_servers section");
     let server = lang_servers
         .get("sqlalchemy_lsp")
         .expect("sqlalchemy_lsp server entry");
@@ -45,7 +47,10 @@ fn zed_extension_toml_marketplace_metadata() {
     let authors = doc["authors"].as_array().unwrap();
     assert!(!authors.is_empty(), "authors must be non-empty");
     assert!(
-        authors.iter().any(|a| a.as_str().map(|s| s.contains("alex.oleshkevich")).unwrap_or(false)),
+        authors.iter().any(|a| a
+            .as_str()
+            .map(|s| s.contains("alex.oleshkevich"))
+            .unwrap_or(false)),
         "authors must include alex.oleshkevich"
     );
 }
@@ -64,11 +69,15 @@ fn license_file_exists_at_repo_root() {
 #[test]
 fn package_script_copies_license_into_zed_dir() {
     let script = repo_root().join("scripts/package-zed-extension.sh");
-    assert!(script.exists(), "scripts/package-zed-extension.sh must exist");
+    assert!(
+        script.exists(),
+        "scripts/package-zed-extension.sh must exist"
+    );
 
     let content = std::fs::read_to_string(&script).expect("read package-zed-extension.sh");
     assert!(
-        content.contains("cp LICENSE \"$ZED_SRC/\"") || content.contains("cp LICENSE \"${ZED_SRC}/\""),
+        content.contains("cp LICENSE \"$ZED_SRC/\"")
+            || content.contains("cp LICENSE \"${ZED_SRC}/\""),
         "package script must copy LICENSE into editors/zed/ for marketplace validation"
     );
 }
@@ -78,8 +87,8 @@ fn package_script_copies_license_into_zed_dir() {
 fn scripts_reference_sqlalchemy_lsp_binary() {
     for script_name in &["install-zed-extension.sh", "package-zed-extension.sh"] {
         let path = repo_root().join("scripts").join(script_name);
-        let content = std::fs::read_to_string(&path)
-            .unwrap_or_else(|_| panic!("read scripts/{script_name}"));
+        let content =
+            std::fs::read_to_string(&path).unwrap_or_else(|_| panic!("read scripts/{script_name}"));
         assert!(
             content.contains("sqlalchemy_lsp_zed") || content.contains("sqlalchemy-lsp"),
             "{script_name} must reference sqlalchemy-lsp, not babel-lsp"

@@ -7,9 +7,7 @@ use tower_lsp_server::ls_types::{
 };
 
 use crate::{
-    features::code_action,
-    model::types::FixKind,
-    pipeline::build_workspace_index,
+    features::code_action, model::types::FixKind, pipeline::build_workspace_index,
     state::WorkspaceState,
 };
 
@@ -61,7 +59,9 @@ pub fn run_check(args: CheckArgs) -> i32 {
     for token in args.select.iter().chain(args.ignore.iter()) {
         if !is_valid_filter_token(token) {
             eprintln!("error: unknown diagnostic code or token `{token}`");
-            eprintln!("hint: use `SQLA-<letter><digits>`, a class token like `SQLA-3xx`, or a preset (`all`, `none`, `recommended`)");
+            eprintln!(
+                "hint: use `SQLA-<letter><digits>`, a class token like `SQLA-3xx`, or a preset (`all`, `none`, `recommended`)"
+            );
             return 2;
         }
     }
@@ -71,9 +71,16 @@ pub fn run_check(args: CheckArgs) -> i32 {
     let targets: Vec<PathBuf> = if args.paths.is_empty() {
         vec![root.clone()]
     } else {
-        args.paths.iter().map(|p| {
-            if p.is_absolute() { p.clone() } else { std::env::current_dir().unwrap_or_default().join(p) }
-        }).collect()
+        args.paths
+            .iter()
+            .map(|p| {
+                if p.is_absolute() {
+                    p.clone()
+                } else {
+                    std::env::current_dir().unwrap_or_default().join(p)
+                }
+            })
+            .collect()
     };
 
     // Build the full workspace index
@@ -103,22 +110,41 @@ pub fn run_check(args: CheckArgs) -> i32 {
         && std::env::var("NO_COLOR").is_err();
 
     let mut stdout = std::io::stdout();
-    render(&findings, &args.reporter, files_checked, fix_result.as_ref(), use_color, &mut stdout);
+    render(
+        &findings,
+        &args.reporter,
+        files_checked,
+        fix_result.as_ref(),
+        use_color,
+        &mut stdout,
+    );
 
     // Exit code
-    if args.exit_zero || findings.is_empty() { 0 } else { 1 }
+    if args.exit_zero || findings.is_empty() {
+        0
+    } else {
+        1
+    }
 }
 
 // ── Workspace root discovery ──────────────────────────────────────────────────
 
 fn determine_root(paths: &[PathBuf]) -> PathBuf {
     let start = if let Some(p) = paths.first() {
-        if p.is_absolute() { p.clone() } else { std::env::current_dir().unwrap_or_default().join(p) }
+        if p.is_absolute() {
+            p.clone()
+        } else {
+            std::env::current_dir().unwrap_or_default().join(p)
+        }
     } else {
         std::env::current_dir().unwrap_or_default()
     };
 
-    let start = if start.is_file() { start.parent().unwrap_or(&start).to_path_buf() } else { start };
+    let start = if start.is_file() {
+        start.parent().unwrap_or(&start).to_path_buf()
+    } else {
+        start
+    };
 
     // Walk up to find pyproject.toml or .git
     let mut dir = start.as_path();
@@ -143,11 +169,17 @@ fn collect_findings(state: &Arc<WorkspaceState>, targets: &[PathBuf], root: &Pat
         let uri = entry.key();
         let diags = entry.value();
 
-        let Some(file_path) = uri.to_file_path() else { continue };
+        let Some(file_path) = uri.to_file_path() else {
+            continue;
+        };
 
         // Only include findings under one of the target paths
         if !targets.iter().any(|t| {
-            if t.is_file() { file_path == t.as_path() } else { file_path.starts_with(t) }
+            if t.is_file() {
+                file_path == t.as_path()
+            } else {
+                file_path.starts_with(t)
+            }
         }) {
             continue;
         }
@@ -158,7 +190,11 @@ fn collect_findings(state: &Arc<WorkspaceState>, targets: &[PathBuf], root: &Pat
             .to_string_lossy()
             .into_owned();
 
-        let source = state.file_sources.get(uri).map(|s| s.clone()).unwrap_or_default();
+        let source = state
+            .file_sources
+            .get(uri)
+            .map(|s| s.clone())
+            .unwrap_or_default();
 
         for diag in diags.iter() {
             let code = match &diag.code {
@@ -193,7 +229,8 @@ fn collect_findings(state: &Arc<WorkspaceState>, targets: &[PathBuf], root: &Pat
 
     // Sort deterministically: by file, then line, then col
     findings.sort_by(|a, b| {
-        a.rel_path.cmp(&b.rel_path)
+        a.rel_path
+            .cmp(&b.rel_path)
             .then(a.line.cmp(&b.line))
             .then(a.col.cmp(&b.col))
     });
@@ -228,8 +265,9 @@ fn apply_noqa(findings: &mut Vec<Finding>, state: &Arc<WorkspaceState>) {
             if let Some(p) = path {
                 let p_str = p.to_string_lossy();
                 // Match by suffix: f.rel_path should be a suffix of the full path
-                if !p_str.ends_with(&f.rel_path.replace('/', std::path::MAIN_SEPARATOR_STR)) &&
-                   !p_str.ends_with(&f.rel_path) {
+                if !p_str.ends_with(&f.rel_path.replace('/', std::path::MAIN_SEPARATOR_STR))
+                    && !p_str.ends_with(&f.rel_path)
+                {
                     return false;
                 }
             } else {
@@ -268,18 +306,21 @@ fn noqa_suppresses(line: &str, code: &str) -> bool {
 
 fn apply_filter(findings: &mut Vec<Finding>, select: &[String], ignore: &[String]) {
     findings.retain(|f| {
-        let included = if select.is_empty() || select.iter().any(|s| s == "all" || s == "recommended") {
-            true
-        } else if select.iter().any(|s| s == "none") {
-            false
-        } else {
-            select.iter().any(|s| matches_filter(&f.code, s))
-        };
+        let included =
+            if select.is_empty() || select.iter().any(|s| s == "all" || s == "recommended") {
+                true
+            } else if select.iter().any(|s| s == "none") {
+                false
+            } else {
+                select.iter().any(|s| matches_filter(&f.code, s))
+            };
 
-        if !included { return false; }
+        if !included {
+            return false;
+        }
 
-        let excluded = ignore.iter().any(|s| s == "all") ||
-            (!ignore.is_empty() && ignore.iter().any(|s| matches_filter(&f.code, s)));
+        let excluded = ignore.iter().any(|s| s == "all")
+            || (!ignore.is_empty() && ignore.iter().any(|s| matches_filter(&f.code, s)));
         !excluded
     });
 }
@@ -291,9 +332,7 @@ fn matches_filter(code: &str, filter: &str) -> bool {
         _ if filter.len() == 8 && filter.starts_with("SQLA-") && filter.ends_with("xx") => {
             // Class token: SQLA-3xx → match codes where hundreds digit == filter[5]
             let token_digit = filter.chars().nth(5).unwrap_or('_');
-            code.starts_with("SQLA-")
-                && code.len() >= 9
-                && code.chars().nth(6) == Some(token_digit)
+            code.starts_with("SQLA-") && code.len() >= 9 && code.chars().nth(6) == Some(token_digit)
         }
         _ => code == filter,
     }
@@ -309,7 +348,9 @@ pub fn is_valid_filter_token(token: &str) -> bool {
             let mut chars = token.chars().skip(5);
             let letter = chars.next().unwrap_or('_');
             let digits: String = chars.collect();
-            "EWIH".contains(letter) && digits.len() == 3 && digits.chars().all(|c| c.is_ascii_digit())
+            "EWIH".contains(letter)
+                && digits.len() == 3
+                && digits.chars().all(|c| c.is_ascii_digit())
         }
         _ => false,
     }
@@ -332,7 +373,8 @@ fn apply_fixes(
     };
 
     // For each URI with fixable diagnostics, collect the code actions and apply them
-    let mut file_edits: std::collections::HashMap<tower_lsp_server::ls_types::Uri, String> = std::collections::HashMap::new();
+    let mut file_edits: std::collections::HashMap<tower_lsp_server::ls_types::Uri, String> =
+        std::collections::HashMap::new();
 
     for entry in state.diagnostics.iter() {
         let uri = entry.key().clone();
@@ -340,16 +382,16 @@ fn apply_fixes(
 
         let fixable_diags: Vec<_> = diags
             .iter()
-            .filter(|d| {
-                match &d.code {
-                    Some(NumberOrString::String(c)) => fixable_codes.contains(&c.as_str()),
-                    _ => false,
-                }
+            .filter(|d| match &d.code {
+                Some(NumberOrString::String(c)) => fixable_codes.contains(&c.as_str()),
+                _ => false,
             })
             .cloned()
             .collect();
 
-        if fixable_diags.is_empty() { continue; }
+        if fixable_diags.is_empty() {
+            continue;
+        }
 
         let params = CodeActionParams {
             text_document: TextDocumentIdentifier { uri: uri.clone() },
@@ -359,8 +401,12 @@ fn apply_fixes(
                 only: None,
                 trigger_kind: None,
             },
-            work_done_progress_params: WorkDoneProgressParams { work_done_token: None },
-            partial_result_params: PartialResultParams { partial_result_token: None },
+            work_done_progress_params: WorkDoneProgressParams {
+                work_done_token: None,
+            },
+            partial_result_params: PartialResultParams {
+                partial_result_token: None,
+            },
         };
 
         let actions = code_action::provide_code_actions(&params, state);
@@ -373,11 +419,13 @@ fn apply_fixes(
             if let Some(edit) = resolved.edit {
                 if let Some(changes) = edit.changes {
                     for (edit_uri, text_edits) in changes {
-                        let source = file_edits
-                            .entry(edit_uri.clone())
-                            .or_insert_with(|| {
-                                state.file_sources.get(&edit_uri).map(|s| s.clone()).unwrap_or_default()
-                            });
+                        let source = file_edits.entry(edit_uri.clone()).or_insert_with(|| {
+                            state
+                                .file_sources
+                                .get(&edit_uri)
+                                .map(|s| s.clone())
+                                .unwrap_or_default()
+                        });
                         *source = apply_text_edits(source, &text_edits);
                         fixed += 1;
                     }
@@ -399,20 +447,27 @@ fn apply_fixes(
         !fixable_codes.contains(&code.as_str())
     });
 
-    let unsafe_fixable = findings.iter().filter(|f| matches!(f.fix_kind, FixKind::Unsafe)).count();
+    let unsafe_fixable = findings
+        .iter()
+        .filter(|f| matches!(f.fix_kind, FixKind::Unsafe))
+        .count();
     let remaining = findings.len();
 
-    FixResult { fixed, remaining, unsafe_fixable }
+    FixResult {
+        fixed,
+        remaining,
+        unsafe_fixable,
+    }
 }
 
-fn apply_text_edits(
-    source: &str,
-    edits: &[tower_lsp_server::ls_types::TextEdit],
-) -> String {
+fn apply_text_edits(source: &str, edits: &[tower_lsp_server::ls_types::TextEdit]) -> String {
     // Sort in reverse order to preserve offsets as we apply
     let mut sorted: Vec<_> = edits.to_vec();
     sorted.sort_by(|a, b| {
-        b.range.start.line.cmp(&a.range.start.line)
+        b.range
+            .start
+            .line
+            .cmp(&a.range.start.line)
             .then(b.range.start.character.cmp(&a.range.start.character))
     });
 
@@ -466,7 +521,9 @@ fn apply_one_edit(source: &str, edit: &tower_lsp_server::ls_types::TextEdit) -> 
             out.push('\n');
         } else {
             out.push_str(line);
-            if i + 1 < lines.len() { out.push('\n'); }
+            if i + 1 < lines.len() {
+                out.push('\n');
+            }
         }
     }
 
@@ -488,7 +545,10 @@ mod tests {
             code: code.to_string(),
             message: String::new(),
             severity: tower_lsp_server::ls_types::DiagnosticSeverity::WARNING,
-            line: 1, col: 1, end_line: 1, end_col: 5,
+            line: 1,
+            col: 1,
+            end_line: 1,
+            end_col: 5,
             fix_kind: FixKind::None,
             source_line: None,
         };
@@ -506,12 +566,19 @@ mod tests {
             code: code.to_string(),
             message: String::new(),
             severity: tower_lsp_server::ls_types::DiagnosticSeverity::WARNING,
-            line: 1, col: 1, end_line: 1, end_col: 5,
+            line: 1,
+            col: 1,
+            end_line: 1,
+            end_col: 5,
             fix_kind: FixKind::None,
             source_line: None,
         };
 
-        let mut findings = vec![finding("SQLA-W303"), finding("SQLA-W402"), finding("SQLA-W101")];
+        let mut findings = vec![
+            finding("SQLA-W303"),
+            finding("SQLA-W402"),
+            finding("SQLA-W101"),
+        ];
         // SQLA-3xx should keep only W303
         apply_filter(&mut findings, &["SQLA-3xx".to_string()], &[]);
         assert_eq!(findings.len(), 1);
@@ -525,7 +592,10 @@ mod tests {
             code: code.to_string(),
             message: String::new(),
             severity: tower_lsp_server::ls_types::DiagnosticSeverity::WARNING,
-            line: 1, col: 1, end_line: 1, end_col: 5,
+            line: 1,
+            col: 1,
+            end_line: 1,
+            end_col: 5,
             fix_kind: FixKind::None,
             source_line: None,
         };
@@ -544,7 +614,10 @@ mod tests {
             code: code.to_string(),
             message: String::new(),
             severity: tower_lsp_server::ls_types::DiagnosticSeverity::WARNING,
-            line: 1, col: 1, end_line: 1, end_col: 5,
+            line: 1,
+            col: 1,
+            end_line: 1,
+            end_col: 5,
             fix_kind: FixKind::None,
             source_line: None,
         };
@@ -568,7 +641,10 @@ mod tests {
     #[test]
     fn req_cli_05_noqa_specific_code() {
         assert!(noqa_suppresses("    x = 1  # noqa: SQLA-W303", "SQLA-W303"));
-        assert!(!noqa_suppresses("    x = 1  # noqa: SQLA-W303", "SQLA-W402"));
+        assert!(!noqa_suppresses(
+            "    x = 1  # noqa: SQLA-W303",
+            "SQLA-W402"
+        ));
     }
 
     #[test]
@@ -579,7 +655,10 @@ mod tests {
 
     #[test]
     fn req_cli_05_noqa_multiple_codes() {
-        assert!(noqa_suppresses("    x = 1  # noqa: SQLA-W303, SQLA-W402", "SQLA-W402"));
+        assert!(noqa_suppresses(
+            "    x = 1  # noqa: SQLA-W303, SQLA-W402",
+            "SQLA-W402"
+        ));
     }
 
     // ── REQ-CLI-10: exit codes ────────────────────────────────────────────────

@@ -12,10 +12,16 @@ pub fn fixture(name: &str) -> PathBuf {
 
 /// Collect all `.py` files under a directory, non-recursively.
 pub fn py_files(dir: &Path) -> Vec<PathBuf> {
-    let Ok(rd) = std::fs::read_dir(dir) else { return vec![] };
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return vec![];
+    };
     rd.filter_map(|e| {
         let path = e.ok()?.path();
-        if path.extension()?.to_str()? == "py" { Some(path) } else { None }
+        if path.extension()?.to_str()? == "py" {
+            Some(path)
+        } else {
+            None
+        }
     })
     .collect()
 }

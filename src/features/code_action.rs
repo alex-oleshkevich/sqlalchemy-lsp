@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tower_lsp_server::ls_types::{
-    CodeAction, CodeActionKind, CodeActionOrCommand, CodeActionParams, Diagnostic,
-    NumberOrString, Position, Range, TextEdit, Uri, WorkspaceEdit,
+    CodeAction, CodeActionKind, CodeActionOrCommand, CodeActionParams, Diagnostic, NumberOrString,
+    Position, Range, TextEdit, Uri, WorkspaceEdit,
 };
 
 use crate::{model::types::Range as MRange, state::WorkspaceState};
@@ -13,8 +13,14 @@ use crate::{model::types::Range as MRange, state::WorkspaceState};
 
 fn lsp_range(r: MRange) -> Range {
     Range {
-        start: Position { line: r.start_line, character: r.start_col },
-        end: Position { line: r.end_line, character: r.end_col },
+        start: Position {
+            line: r.start_line,
+            character: r.start_col,
+        },
+        end: Position {
+            line: r.end_line,
+            character: r.end_col,
+        },
     }
 }
 
@@ -30,7 +36,9 @@ fn diag_overlaps(diag: &Diagnostic, r: MRange) -> bool {
 fn to_snake_case(s: &str) -> String {
     let mut out = String::new();
     for (i, ch) in s.chars().enumerate() {
-        if ch.is_uppercase() && i != 0 { out.push('_'); }
+        if ch.is_uppercase() && i != 0 {
+            out.push('_');
+        }
         out.push(ch.to_lowercase().next().unwrap());
     }
     out
@@ -42,7 +50,9 @@ fn quote_char_at(source: &str, line: u32, col: u32) -> char {
     let mut cur_line = 0u32;
     let mut pos = 0usize;
     while pos < bytes.len() && cur_line < line {
-        if bytes[pos] == b'\n' { cur_line += 1; }
+        if bytes[pos] == b'\n' {
+            cur_line += 1;
+        }
         pos += 1;
     }
     let col_pos = pos + col as usize;
@@ -72,7 +82,13 @@ pub struct ActionData {
     pub rel_name: Option<String>,
 }
 
-fn meta_action(title: &str, kind: CodeActionKind, is_preferred: bool, diag: Option<Diagnostic>, data: ActionData) -> CodeAction {
+fn meta_action(
+    title: &str,
+    kind: CodeActionKind,
+    is_preferred: bool,
+    diag: Option<Diagnostic>,
+    data: ActionData,
+) -> CodeAction {
     CodeAction {
         title: title.to_string(),
         kind: Some(kind),
@@ -87,7 +103,10 @@ fn meta_action(title: &str, kind: CodeActionKind, is_preferred: bool, diag: Opti
 
 // ── textDocument/codeAction ───────────────────────────────────────────────────
 
-pub fn provide_code_actions(params: &CodeActionParams, state: &WorkspaceState) -> Vec<CodeActionOrCommand> {
+pub fn provide_code_actions(
+    params: &CodeActionParams,
+    state: &WorkspaceState,
+) -> Vec<CodeActionOrCommand> {
     let uri = &params.text_document.uri;
     let diags = &params.context.diagnostics;
 
@@ -117,9 +136,13 @@ pub fn provide_code_actions(params: &CodeActionParams, state: &WorkspaceState) -
                         model_name: model.name.clone(),
                         rel_name: None,
                     };
-                    actions.push(CodeActionOrCommand::CodeAction(
-                        meta_action(&title, CodeActionKind::QUICKFIX, false, Some(diag.clone()), data)
-                    ));
+                    actions.push(CodeActionOrCommand::CodeAction(meta_action(
+                        &title,
+                        CodeActionKind::QUICKFIX,
+                        false,
+                        Some(diag.clone()),
+                        data,
+                    )));
                 }
 
                 // REQ-CA-04: fix back_populates (Safe)
@@ -128,7 +151,11 @@ pub fn provide_code_actions(params: &CodeActionParams, state: &WorkspaceState) -
                         if let Some(bp_range) = rel.back_populates_range {
                             if diag_overlaps(diag, bp_range) {
                                 // Resolve counterpart
-                                if let Some(counterpart) = resolve_back_populates_counterpart(&model.name, &rel.name, state) {
+                                if let Some(counterpart) = resolve_back_populates_counterpart(
+                                    &model.name,
+                                    &rel.name,
+                                    state,
+                                ) {
                                     let title = format!("Fix `back_populates` to `{counterpart}`");
                                     let data = ActionData {
                                         action_id: "CA-04".into(),
@@ -136,9 +163,13 @@ pub fn provide_code_actions(params: &CodeActionParams, state: &WorkspaceState) -
                                         model_name: model.name.clone(),
                                         rel_name: Some(rel.name.clone()),
                                     };
-                                    actions.push(CodeActionOrCommand::CodeAction(
-                                        meta_action(&title, CodeActionKind::QUICKFIX, true, Some(diag.clone()), data)
-                                    ));
+                                    actions.push(CodeActionOrCommand::CodeAction(meta_action(
+                                        &title,
+                                        CodeActionKind::QUICKFIX,
+                                        true,
+                                        Some(diag.clone()),
+                                        data,
+                                    )));
                                 }
                             }
                         }
@@ -156,15 +187,13 @@ pub fn provide_code_actions(params: &CodeActionParams, state: &WorkspaceState) -
                                     model_name: model.name.clone(),
                                     rel_name: Some(rel.name.clone()),
                                 };
-                                actions.push(CodeActionOrCommand::CodeAction(
-                                    meta_action(
-                                        "Rewrite cascade to `all, delete-orphan`",
-                                        CodeActionKind::QUICKFIX,
-                                        false,
-                                        Some(diag.clone()),
-                                        data,
-                                    )
-                                ));
+                                actions.push(CodeActionOrCommand::CodeAction(meta_action(
+                                    "Rewrite cascade to `all, delete-orphan`",
+                                    CodeActionKind::QUICKFIX,
+                                    false,
+                                    Some(diag.clone()),
+                                    data,
+                                )));
                             }
                         }
                     }
@@ -179,9 +208,15 @@ pub fn provide_code_actions(params: &CodeActionParams, state: &WorkspaceState) -
     // Offered when cursor is inside a relationship with no back_populates but counterpart exists
     for model in file_models.iter() {
         for rel in model.relationships.values() {
-            if rel.back_populates.is_some() { continue; }
-            if !range_overlaps_lsp(&params.range, rel.full_range) { continue; }
-            if let Some(counterpart) = resolve_back_populates_counterpart(&model.name, &rel.name, state) {
+            if rel.back_populates.is_some() {
+                continue;
+            }
+            if !range_overlaps_lsp(&params.range, rel.full_range) {
+                continue;
+            }
+            if let Some(counterpart) =
+                resolve_back_populates_counterpart(&model.name, &rel.name, state)
+            {
                 let title = format!("Add `back_populates=\"{counterpart}\"`");
                 let data = ActionData {
                     action_id: "CA-06".into(),
@@ -189,9 +224,13 @@ pub fn provide_code_actions(params: &CodeActionParams, state: &WorkspaceState) -
                     model_name: model.name.clone(),
                     rel_name: Some(rel.name.clone()),
                 };
-                actions.push(CodeActionOrCommand::CodeAction(
-                    meta_action(&title, CodeActionKind::REFACTOR, true, None, data)
-                ));
+                actions.push(CodeActionOrCommand::CodeAction(meta_action(
+                    &title,
+                    CodeActionKind::REFACTOR,
+                    true,
+                    None,
+                    data,
+                )));
             }
         }
     }
@@ -203,7 +242,11 @@ fn range_overlaps_lsp(lsp: &Range, model_r: MRange) -> bool {
     lsp.start.line <= model_r.end_line && lsp.end.line >= model_r.start_line
 }
 
-fn resolve_back_populates_counterpart(model_name: &str, rel_name: &str, state: &WorkspaceState) -> Option<String> {
+fn resolve_back_populates_counterpart(
+    model_name: &str,
+    rel_name: &str,
+    state: &WorkspaceState,
+) -> Option<String> {
     // Find the model
     let loc = state.model_index.get(model_name)?;
     let uri = loc.uri.clone();
@@ -222,7 +265,9 @@ fn resolve_back_populates_counterpart(model_name: &str, rel_name: &str, state: &
     let target = target_models.iter().find(|m| m.name == target_name)?;
 
     // Find the counterpart relationship: one that targets the source model
-    let counterpart = target.relationships.values()
+    let counterpart = target
+        .relationships
+        .values()
         .find(|r| r.target_model == model_name)?;
     Some(counterpart.name.clone())
 }
@@ -230,7 +275,11 @@ fn resolve_back_populates_counterpart(model_name: &str, rel_name: &str, state: &
 // ── codeAction/resolve ────────────────────────────────────────────────────────
 
 pub fn resolve_code_action(mut action: CodeAction, state: &WorkspaceState) -> CodeAction {
-    let data: ActionData = match action.data.as_ref().and_then(|v| serde_json::from_value(v.clone()).ok()) {
+    let data: ActionData = match action
+        .data
+        .as_ref()
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+    {
         Some(d) => d,
         None => return action,
     };
@@ -242,9 +291,24 @@ pub fn resolve_code_action(mut action: CodeAction, state: &WorkspaceState) -> Co
 
     let edit = match data.action_id.as_str() {
         "CA-03" => build_ca_03_edit(&uri, &data.model_name, state),
-        "CA-04" => build_ca_04_edit(&uri, &data.model_name, data.rel_name.as_deref().unwrap_or(""), state),
-        "CA-06" => build_ca_06_edit(&uri, &data.model_name, data.rel_name.as_deref().unwrap_or(""), state),
-        "CA-09" => build_ca_09_edit(&uri, &data.model_name, data.rel_name.as_deref().unwrap_or(""), state),
+        "CA-04" => build_ca_04_edit(
+            &uri,
+            &data.model_name,
+            data.rel_name.as_deref().unwrap_or(""),
+            state,
+        ),
+        "CA-06" => build_ca_06_edit(
+            &uri,
+            &data.model_name,
+            data.rel_name.as_deref().unwrap_or(""),
+            state,
+        ),
+        "CA-09" => build_ca_09_edit(
+            &uri,
+            &data.model_name,
+            data.rel_name.as_deref().unwrap_or(""),
+            state,
+        ),
         _ => None,
     };
 
@@ -270,8 +334,14 @@ fn build_ca_03_edit(uri: &Uri, model_name: &str, state: &WorkspaceState) -> Opti
 
     let edit = TextEdit {
         range: Range {
-            start: Position { line: insert_line, character: 0 },
-            end: Position { line: insert_line, character: 0 },
+            start: Position {
+                line: insert_line,
+                character: 0,
+            },
+            end: Position {
+                line: insert_line,
+                character: 0,
+            },
         },
         new_text: format!("    __tablename__ = \"{table_name}\"\n"),
     };
@@ -292,7 +362,12 @@ fn find_class_header_end(source: &str, start_line: u32) -> u32 {
 }
 
 /// REQ-CA-04: replace back_populates string with the resolved counterpart name.
-fn build_ca_04_edit(uri: &Uri, model_name: &str, rel_name: &str, state: &WorkspaceState) -> Option<WorkspaceEdit> {
+fn build_ca_04_edit(
+    uri: &Uri,
+    model_name: &str,
+    rel_name: &str,
+    state: &WorkspaceState,
+) -> Option<WorkspaceEdit> {
     let source = state.file_sources.get(uri)?.clone();
     let file_models = state.file_models.get(uri)?;
     let model = file_models.iter().find(|m| m.name == model_name)?;
@@ -300,16 +375,29 @@ fn build_ca_04_edit(uri: &Uri, model_name: &str, rel_name: &str, state: &Workspa
     let bp_range = rel.back_populates_range?;
 
     let counterpart = resolve_back_populates_counterpart(model_name, rel_name, state)?;
-    let new_text = quoted(&source, bp_range.start_line, bp_range.start_col, &counterpart);
+    let new_text = quoted(
+        &source,
+        bp_range.start_line,
+        bp_range.start_col,
+        &counterpart,
+    );
 
-    let edit = TextEdit { range: lsp_range(bp_range), new_text };
+    let edit = TextEdit {
+        range: lsp_range(bp_range),
+        new_text,
+    };
     let mut changes = HashMap::new();
     changes.insert(uri.clone(), vec![edit]);
     Some(WorkspaceEdit::new(changes))
 }
 
 /// REQ-CA-06: append `, back_populates="…"` inside the relationship's closing paren.
-fn build_ca_06_edit(uri: &Uri, model_name: &str, rel_name: &str, state: &WorkspaceState) -> Option<WorkspaceEdit> {
+fn build_ca_06_edit(
+    uri: &Uri,
+    model_name: &str,
+    rel_name: &str,
+    state: &WorkspaceState,
+) -> Option<WorkspaceEdit> {
     let source = state.file_sources.get(uri)?.clone();
     let file_models = state.file_models.get(uri)?;
     let model = file_models.iter().find(|m| m.name == model_name)?;
@@ -322,7 +410,10 @@ fn build_ca_06_edit(uri: &Uri, model_name: &str, rel_name: &str, state: &Workspa
 
     let new_text = format!(", back_populates=\"{counterpart}\"");
     let edit = TextEdit {
-        range: Range { start: close_pos, end: close_pos },
+        range: Range {
+            start: close_pos,
+            end: close_pos,
+        },
         new_text,
     };
     let mut changes = HashMap::new();
@@ -331,15 +422,28 @@ fn build_ca_06_edit(uri: &Uri, model_name: &str, rel_name: &str, state: &Workspa
 }
 
 /// REQ-CA-09: replace cascade string with `"all, delete-orphan"`.
-fn build_ca_09_edit(uri: &Uri, model_name: &str, rel_name: &str, state: &WorkspaceState) -> Option<WorkspaceEdit> {
+fn build_ca_09_edit(
+    uri: &Uri,
+    model_name: &str,
+    rel_name: &str,
+    state: &WorkspaceState,
+) -> Option<WorkspaceEdit> {
     let source = state.file_sources.get(uri)?.clone();
     let file_models = state.file_models.get(uri)?;
     let model = file_models.iter().find(|m| m.name == model_name)?;
     let rel = model.relationships.get(rel_name)?;
     let c_range = rel.cascade_range?;
 
-    let new_text = quoted(&source, c_range.start_line, c_range.start_col, "all, delete-orphan");
-    let edit = TextEdit { range: lsp_range(c_range), new_text };
+    let new_text = quoted(
+        &source,
+        c_range.start_line,
+        c_range.start_col,
+        "all, delete-orphan",
+    );
+    let edit = TextEdit {
+        range: lsp_range(c_range),
+        new_text,
+    };
     let mut changes = HashMap::new();
     changes.insert(uri.clone(), vec![edit]);
     Some(WorkspaceEdit::new(changes))
@@ -351,16 +455,25 @@ fn find_closing_paren_of_call(source: &str, full_range: MRange) -> Option<Positi
     // Collect lines from start to end of the full_range
     let end_line = full_range.end_line as usize;
     let lines: Vec<&str> = source.lines().collect();
-    if end_line >= lines.len() { return None; }
+    if end_line >= lines.len() {
+        return None;
+    }
 
     // Scan the end line backwards for ')'
     let line = lines[end_line];
-    let end_col = if end_line == full_range.end_line as usize { full_range.end_col as usize } else { line.len() };
+    let end_col = if end_line == full_range.end_line as usize {
+        full_range.end_col as usize
+    } else {
+        line.len()
+    };
     let search_col = end_col.min(line.len());
 
     // Search backwards for the last ')' on the end line
     let pos = line[..search_col].rfind(')')?;
-    Some(Position { line: full_range.end_line, character: pos as u32 })
+    Some(Position {
+        line: full_range.end_line,
+        character: pos as u32,
+    })
 }
 
 // ── Unit tests ─────────────────────────────────────────────────────────────────
@@ -373,10 +486,28 @@ mod tests {
     use std::collections::HashMap;
     use tower_lsp_server::ls_types::{CodeActionContext, NumberOrString, Position, Range, Uri};
 
-    fn uri(s: &str) -> Uri { s.parse().unwrap() }
-    fn rng(sl: u32, sc: u32, el: u32, ec: u32) -> MRange { MRange { start_line: sl, start_col: sc, end_line: el, end_col: ec } }
+    fn uri(s: &str) -> Uri {
+        s.parse().unwrap()
+    }
+    fn rng(sl: u32, sc: u32, el: u32, ec: u32) -> MRange {
+        MRange {
+            start_line: sl,
+            start_col: sc,
+            end_line: el,
+            end_col: ec,
+        }
+    }
     fn lsp_rng(sl: u32, sc: u32, el: u32, ec: u32) -> Range {
-        Range { start: Position { line: sl, character: sc }, end: Position { line: el, character: ec } }
+        Range {
+            start: Position {
+                line: sl,
+                character: sc,
+            },
+            end: Position {
+                line: el,
+                character: ec,
+            },
+        }
     }
 
     fn dummy_diag(code: &str, range: Range) -> Diagnostic {
@@ -393,14 +524,31 @@ mod tests {
         }
     }
 
-    fn rel(name: &str, target: &str, bp: Option<&str>, bp_range: Option<MRange>, cascade: Option<&str>, c_range: Option<MRange>, r: MRange) -> Relationship {
+    fn rel(
+        name: &str,
+        target: &str,
+        bp: Option<&str>,
+        bp_range: Option<MRange>,
+        cascade: Option<&str>,
+        c_range: Option<MRange>,
+        r: MRange,
+    ) -> Relationship {
         Relationship {
-            name: name.to_string(), target_model: target.to_string(),
-            explicit_target: None, back_populates: bp.map(String::from),
-            lazy: None, uselist: None, secondary: None,
-            cascade: cascade.map(String::from), is_list: true,
-            backref: None, remote_side: false, has_foreign_keys: false, viewonly: None,
-            name_range: r, full_range: r,
+            name: name.to_string(),
+            target_model: target.to_string(),
+            explicit_target: None,
+            back_populates: bp.map(String::from),
+            lazy: None,
+            uselist: None,
+            secondary: None,
+            cascade: cascade.map(String::from),
+            is_list: true,
+            backref: None,
+            remote_side: false,
+            has_foreign_keys: false,
+            viewonly: None,
+            name_range: r,
+            full_range: r,
             target_range: None,
             back_populates_range: bp_range,
             cascade_range: c_range,
@@ -409,9 +557,14 @@ mod tests {
 
     fn base_model(name: &str, table: &str, line: u32) -> Model {
         Model {
-            name: name.to_string(), table_name: Some(table.to_string()), bases: vec![],
-            columns: HashMap::new(), relationships: HashMap::new(), table_args: vec![],
-            duplicate_columns: vec![], docstring: None,
+            name: name.to_string(),
+            table_name: Some(table.to_string()),
+            bases: vec![],
+            columns: HashMap::new(),
+            relationships: HashMap::new(),
+            table_args: vec![],
+            duplicate_columns: vec![],
+            docstring: None,
             name_range: rng(line, 6, line, 6 + name.len() as u32),
             full_range: rng(line, 0, line + 10, 0),
         }
@@ -439,7 +592,9 @@ mod tests {
         let u = uri("file:///user.py");
         let model = base_model("User", "users", 5);
         state.update_file(&u, vec![model]);
-        state.file_sources.insert(u.clone(), "class User(Base):\n    pass\n".to_string());
+        state
+            .file_sources
+            .insert(u.clone(), "class User(Base):\n    pass\n".to_string());
 
         let diag = dummy_diag("SQLA-W101", lsp_rng(5, 6, 5, 10));
         let params = mk_params(u, vec![diag], lsp_rng(5, 6, 5, 10));
@@ -467,15 +622,28 @@ mod tests {
         let params = mk_params(u.clone(), vec![diag], lsp_rng(0, 0, 0, 0));
         let actions = provide_code_actions(&params, &state);
         assert_eq!(actions.len(), 1);
-        let action = if let CodeActionOrCommand::CodeAction(a) = actions.into_iter().next().unwrap() { a } else { panic!() };
+        let action = if let CodeActionOrCommand::CodeAction(a) = actions.into_iter().next().unwrap()
+        {
+            a
+        } else {
+            panic!()
+        };
 
         let resolved = resolve_code_action(action, &state);
         let edit = resolved.edit.expect("edit should be present after resolve");
         let changes = edit.changes.expect("changes expected");
         let edits = &changes[&u];
         assert_eq!(edits.len(), 1);
-        assert!(edits[0].new_text.contains("__tablename__"), "new_text: {}", edits[0].new_text);
-        assert!(edits[0].new_text.contains("users"), "new_text: {}", edits[0].new_text);
+        assert!(
+            edits[0].new_text.contains("__tablename__"),
+            "new_text: {}",
+            edits[0].new_text
+        );
+        assert!(
+            edits[0].new_text.contains("users"),
+            "new_text: {}",
+            edits[0].new_text
+        );
         // Inserted at line 1 (the first body line)
         assert_eq!(edits[0].range.start.line, 1);
     }
@@ -489,21 +657,35 @@ mod tests {
         // Set up Post model with "author" rel pointing to User
         let post_uri = uri("file:///post.py");
         let mut post = base_model("Post", "posts", 2);
-        post.relationships.insert("author".into(), rel(
-            "author", "User",
-            Some("wrong_posts"),     // wrong back_populates
-            Some(rng(4, 31, 4, 44)), // range of "wrong_posts" string including quotes
-            None, None,
-            rng(4, 0, 4, 60),
-        ));
+        post.relationships.insert(
+            "author".into(),
+            rel(
+                "author",
+                "User",
+                Some("wrong_posts"),     // wrong back_populates
+                Some(rng(4, 31, 4, 44)), // range of "wrong_posts" string including quotes
+                None,
+                None,
+                rng(4, 0, 4, 60),
+            ),
+        );
         state.update_file(&post_uri, vec![post]);
 
         // Set up User model with "posts" rel pointing to Post
         let user_uri = uri("file:///user.py");
         let mut user = base_model("User", "users", 0);
-        user.relationships.insert("posts".into(), rel(
-            "posts", "Post", Some("author"), None, None, None, rng(2, 0, 2, 50),
-        ));
+        user.relationships.insert(
+            "posts".into(),
+            rel(
+                "posts",
+                "Post",
+                Some("author"),
+                None,
+                None,
+                None,
+                rng(2, 0, 2, 50),
+            ),
+        );
         state.update_file(&user_uri, vec![user]);
 
         let diag = dummy_diag("SQLA-W402", lsp_rng(4, 31, 4, 44));
@@ -524,20 +706,34 @@ mod tests {
 
         let post_uri = uri("file:///post.py");
         let mut post = base_model("Post", "posts", 2);
-        post.relationships.insert("author".into(), rel(
-            "author", "User",
-            Some("wrong"),
-            Some(rng(4, 31, 4, 38)),
-            None, None,
-            rng(4, 0, 4, 60),
-        ));
+        post.relationships.insert(
+            "author".into(),
+            rel(
+                "author",
+                "User",
+                Some("wrong"),
+                Some(rng(4, 31, 4, 38)),
+                None,
+                None,
+                rng(4, 0, 4, 60),
+            ),
+        );
         state.update_file(&post_uri, vec![post]);
 
         let user_uri = uri("file:///user.py");
         let mut user = base_model("User", "users", 0);
-        user.relationships.insert("posts".into(), rel(
-            "posts", "Post", Some("author"), None, None, None, rng(2, 0, 2, 50),
-        ));
+        user.relationships.insert(
+            "posts".into(),
+            rel(
+                "posts",
+                "Post",
+                Some("author"),
+                None,
+                None,
+                None,
+                rng(2, 0, 2, 50),
+            ),
+        );
         state.update_file(&user_uri, vec![user]);
 
         let src = "class Post(Base):\n    pass\n    author = relationship(\"User\", back_populates=\"wrong\")\n".to_string();
@@ -546,13 +742,22 @@ mod tests {
         let diag = dummy_diag("SQLA-W402", lsp_rng(4, 31, 4, 38));
         let params = mk_params(post_uri.clone(), vec![diag], lsp_rng(4, 0, 4, 60));
         let actions = provide_code_actions(&params, &state);
-        let action = if let CodeActionOrCommand::CodeAction(a) = actions.into_iter().next().unwrap() { a } else { panic!() };
+        let action = if let CodeActionOrCommand::CodeAction(a) = actions.into_iter().next().unwrap()
+        {
+            a
+        } else {
+            panic!()
+        };
 
         let resolved = resolve_code_action(action, &state);
         let edit = resolved.edit.expect("edit");
         let changes = edit.changes.expect("changes");
         let edits = &changes[&post_uri];
-        assert!(edits[0].new_text.contains("posts"), "new_text: {}", edits[0].new_text);
+        assert!(
+            edits[0].new_text.contains("posts"),
+            "new_text: {}",
+            edits[0].new_text
+        );
     }
 
     // ── REQ-CA-09: rewrite cascade ────────────────────────────────────────────
@@ -562,13 +767,18 @@ mod tests {
         let state = WorkspaceState::new();
         let u = uri("file:///post.py");
         let mut post = base_model("Post", "posts", 0);
-        post.relationships.insert("comments".into(), rel(
-            "comments", "Comment",
-            None, None,
-            Some("delete-orphan"),
-            Some(rng(3, 28, 3, 44)),
-            rng(3, 0, 3, 60),
-        ));
+        post.relationships.insert(
+            "comments".into(),
+            rel(
+                "comments",
+                "Comment",
+                None,
+                None,
+                Some("delete-orphan"),
+                Some(rng(3, 28, 3, 44)),
+                rng(3, 0, 3, 60),
+            ),
+        );
         state.update_file(&u, vec![post]);
 
         let diag = dummy_diag("SQLA-W409", lsp_rng(3, 28, 3, 44));
@@ -587,13 +797,18 @@ mod tests {
         let state = WorkspaceState::new();
         let u = uri("file:///post.py");
         let mut post = base_model("Post", "posts", 0);
-        post.relationships.insert("comments".into(), rel(
-            "comments", "Comment",
-            None, None,
-            Some("delete-orphan"),
-            Some(rng(3, 28, 3, 44)),
-            rng(3, 0, 3, 60),
-        ));
+        post.relationships.insert(
+            "comments".into(),
+            rel(
+                "comments",
+                "Comment",
+                None,
+                None,
+                Some("delete-orphan"),
+                Some(rng(3, 28, 3, 44)),
+                rng(3, 0, 3, 60),
+            ),
+        );
         state.update_file(&u, vec![post]);
 
         let src = "class Post(Base):\n    pass\n    pass\n    comments = relationship(\"delete-orphan\")\n".to_string();
@@ -602,13 +817,22 @@ mod tests {
         let diag = dummy_diag("SQLA-W409", lsp_rng(3, 28, 3, 44));
         let params = mk_params(u.clone(), vec![diag], lsp_rng(3, 0, 3, 60));
         let actions = provide_code_actions(&params, &state);
-        let action = if let CodeActionOrCommand::CodeAction(a) = actions.into_iter().next().unwrap() { a } else { panic!() };
+        let action = if let CodeActionOrCommand::CodeAction(a) = actions.into_iter().next().unwrap()
+        {
+            a
+        } else {
+            panic!()
+        };
 
         let resolved = resolve_code_action(action, &state);
         let edit = resolved.edit.expect("edit");
         let changes = edit.changes.expect("changes");
         let edits = &changes[&u];
-        assert!(edits[0].new_text.contains("all, delete-orphan"), "new_text: {}", edits[0].new_text);
+        assert!(
+            edits[0].new_text.contains("all, delete-orphan"),
+            "new_text: {}",
+            edits[0].new_text
+        );
     }
 
     // ── REQ-CA-06: proactive back_populates ──────────────────────────────────
@@ -619,19 +843,34 @@ mod tests {
 
         let post_uri = uri("file:///post.py");
         let mut post = base_model("Post", "posts", 0);
-        post.relationships.insert("author".into(), rel(
-            "author", "User",
-            None, None,  // no back_populates
-            None, None,
-            rng(3, 0, 3, 60),
-        ));
+        post.relationships.insert(
+            "author".into(),
+            rel(
+                "author",
+                "User",
+                None,
+                None, // no back_populates
+                None,
+                None,
+                rng(3, 0, 3, 60),
+            ),
+        );
         state.update_file(&post_uri, vec![post]);
 
         let user_uri = uri("file:///user.py");
         let mut user = base_model("User", "users", 0);
-        user.relationships.insert("posts".into(), rel(
-            "posts", "Post", Some("author"), None, None, None, rng(2, 0, 2, 50),
-        ));
+        user.relationships.insert(
+            "posts".into(),
+            rel(
+                "posts",
+                "Post",
+                Some("author"),
+                None,
+                None,
+                None,
+                rng(2, 0, 2, 50),
+            ),
+        );
         state.update_file(&user_uri, vec![user]);
 
         // Cursor inside the relationship range
@@ -652,17 +891,26 @@ mod tests {
         let state = WorkspaceState::new();
         let u = uri("file:///post.py");
         let mut post = base_model("Post", "posts", 0);
-        post.relationships.insert("author".into(), rel(
-            "author", "User",
-            Some("posts"), Some(rng(3, 30, 3, 37)),  // already has back_populates
-            None, None,
-            rng(3, 0, 3, 60),
-        ));
+        post.relationships.insert(
+            "author".into(),
+            rel(
+                "author",
+                "User",
+                Some("posts"),
+                Some(rng(3, 30, 3, 37)), // already has back_populates
+                None,
+                None,
+                rng(3, 0, 3, 60),
+            ),
+        );
         state.update_file(&u, vec![post]);
 
         let params = mk_params(u, vec![], lsp_rng(3, 0, 3, 60));
         let actions = provide_code_actions(&params, &state);
-        assert!(actions.is_empty(), "should not offer CA-06 when already wired");
+        assert!(
+            actions.is_empty(),
+            "should not offer CA-06 when already wired"
+        );
     }
 
     // ── no fix for unfixable codes ────────────────────────────────────────────

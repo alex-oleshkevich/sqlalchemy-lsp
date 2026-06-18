@@ -6,20 +6,31 @@ use crate::state::WorkspaceState;
 
 fn lsp_range(r: crate::model::types::Range) -> Range {
     Range {
-        start: Position { line: r.start_line, character: r.start_col },
-        end: Position { line: r.end_line, character: r.end_col },
+        start: Position {
+            line: r.start_line,
+            character: r.start_col,
+        },
+        end: Position {
+            line: r.end_line,
+            character: r.end_col,
+        },
     }
 }
 
 fn pos_in(pos: Position, r: crate::model::types::Range) -> bool {
-    let after = pos.line > r.start_line || (pos.line == r.start_line && pos.character >= r.start_col);
+    let after =
+        pos.line > r.start_line || (pos.line == r.start_line && pos.character >= r.start_col);
     let before = pos.line < r.end_line || (pos.line == r.end_line && pos.character < r.end_col);
     after && before
 }
 
 // ── Reference collectors ──────────────────────────────────────────────────────
 
-fn collect_model_refs(model_name: &str, table_name: Option<&str>, state: &WorkspaceState) -> Vec<Location> {
+fn collect_model_refs(
+    model_name: &str,
+    table_name: Option<&str>,
+    state: &WorkspaceState,
+) -> Vec<Location> {
     let mut out = Vec::new();
     for entry in state.file_models.iter() {
         let uri = entry.key().clone();
@@ -30,26 +41,40 @@ fn collect_model_refs(model_name: &str, table_name: Option<&str>, state: &Worksp
                     let matches_table = table_name.is_some_and(|t| fk.table == t);
                     let matches_class = fk.table == model_name;
                     if matches_table || matches_class {
-                        out.push(Location { uri: uri.clone(), range: lsp_range(fk.range) });
+                        out.push(Location {
+                            uri: uri.clone(),
+                            range: lsp_range(fk.range),
+                        });
                     }
                 }
             }
             for rel in m.relationships.values() {
                 if rel.target_model == model_name {
                     if let Some(target_range) = rel.target_range {
-                        out.push(Location { uri: uri.clone(), range: lsp_range(target_range) });
+                        out.push(Location {
+                            uri: uri.clone(),
+                            range: lsp_range(target_range),
+                        });
                     }
                 }
             }
             if m.bases.iter().any(|b| b == model_name) {
-                out.push(Location { uri: uri.clone(), range: lsp_range(m.name_range) });
+                out.push(Location {
+                    uri: uri.clone(),
+                    range: lsp_range(m.name_range),
+                });
             }
         }
     }
     out
 }
 
-fn collect_column_refs(model_name: &str, table_name: Option<&str>, col_name: &str, state: &WorkspaceState) -> Vec<Location> {
+fn collect_column_refs(
+    model_name: &str,
+    table_name: Option<&str>,
+    col_name: &str,
+    state: &WorkspaceState,
+) -> Vec<Location> {
     let mut out = Vec::new();
     for entry in state.file_models.iter() {
         let uri = entry.key().clone();
@@ -57,9 +82,13 @@ fn collect_column_refs(model_name: &str, table_name: Option<&str>, col_name: &st
         for m in &file_models {
             for col in m.columns.values() {
                 if let Some(ref fk) = col.foreign_key {
-                    let table_ok = table_name.is_some_and(|t| fk.table == t) || fk.table == model_name;
+                    let table_ok =
+                        table_name.is_some_and(|t| fk.table == t) || fk.table == model_name;
                     if table_ok && fk.column == col_name {
-                        out.push(Location { uri: uri.clone(), range: lsp_range(fk.range) });
+                        out.push(Location {
+                            uri: uri.clone(),
+                            range: lsp_range(fk.range),
+                        });
                     }
                 }
             }
@@ -68,7 +97,11 @@ fn collect_column_refs(model_name: &str, table_name: Option<&str>, col_name: &st
     out
 }
 
-fn collect_relationship_refs(owning_model: &str, rel_name: &str, state: &WorkspaceState) -> Vec<Location> {
+fn collect_relationship_refs(
+    owning_model: &str,
+    rel_name: &str,
+    state: &WorkspaceState,
+) -> Vec<Location> {
     let mut out = Vec::new();
     for entry in state.file_models.iter() {
         let uri = entry.key().clone();
@@ -79,7 +112,10 @@ fn collect_relationship_refs(owning_model: &str, rel_name: &str, state: &Workspa
                     && rel.back_populates.as_deref() == Some(rel_name)
                 {
                     if let Some(bp_range) = rel.back_populates_range {
-                        out.push(Location { uri: uri.clone(), range: lsp_range(bp_range) });
+                        out.push(Location {
+                            uri: uri.clone(),
+                            range: lsp_range(bp_range),
+                        });
                     }
                 }
             }
@@ -107,7 +143,10 @@ pub fn provide_references(
             let table = model.table_name.as_deref();
             let mut refs = collect_model_refs(&model.name, table, state);
             if include_declaration {
-                let def_loc = Location { uri: uri.clone(), range: lsp_range(model.name_range) };
+                let def_loc = Location {
+                    uri: uri.clone(),
+                    range: lsp_range(model.name_range),
+                };
                 refs.insert(0, def_loc);
             }
             return refs;
@@ -119,7 +158,10 @@ pub fn provide_references(
                 let table = model.table_name.as_deref();
                 let mut refs = collect_column_refs(&model.name, table, &col.name, state);
                 if include_declaration {
-                    let def_loc = Location { uri: uri.clone(), range: lsp_range(col.name_range) };
+                    let def_loc = Location {
+                        uri: uri.clone(),
+                        range: lsp_range(col.name_range),
+                    };
                     refs.insert(0, def_loc);
                 }
                 return refs;
@@ -131,7 +173,10 @@ pub fn provide_references(
             if pos_in(pos, rel.name_range) {
                 let mut refs = collect_relationship_refs(&model.name, &rel.name, state);
                 if include_declaration {
-                    let def_loc = Location { uri: uri.clone(), range: lsp_range(rel.name_range) };
+                    let def_loc = Location {
+                        uri: uri.clone(),
+                        range: lsp_range(rel.name_range),
+                    };
                     refs.insert(0, def_loc);
                 }
                 return refs;
@@ -153,9 +198,23 @@ mod tests {
     use crate::state::WorkspaceState;
     use std::collections::HashMap;
 
-    fn uri(s: &str) -> Uri { s.parse().unwrap() }
-    fn rng(sl: u32, sc: u32, el: u32, ec: u32) -> Range { Range { start_line: sl, start_col: sc, end_line: el, end_col: ec } }
-    fn pos(line: u32, ch: u32) -> Position { Position { line, character: ch } }
+    fn uri(s: &str) -> Uri {
+        s.parse().unwrap()
+    }
+    fn rng(sl: u32, sc: u32, el: u32, ec: u32) -> Range {
+        Range {
+            start_line: sl,
+            start_col: sc,
+            end_line: el,
+            end_col: ec,
+        }
+    }
+    fn pos(line: u32, ch: u32) -> Position {
+        Position {
+            line,
+            character: ch,
+        }
+    }
 
     fn simple_col(name: &str, name_rng: Range) -> Column {
         Column {
@@ -203,7 +262,12 @@ mod tests {
         }
     }
 
-    fn simple_rel(name: &str, target: &str, name_rng: Range, target_rng: Option<Range>) -> Relationship {
+    fn simple_rel(
+        name: &str,
+        target: &str,
+        name_rng: Range,
+        target_rng: Option<Range>,
+    ) -> Relationship {
         Relationship {
             name: name.to_string(),
             target_model: target.to_string(),
@@ -267,7 +331,11 @@ mod tests {
         state.update_file(&post_u, vec![post]);
 
         let refs = provide_references(&user_u, pos(0, 7), false, &state);
-        assert!(refs.iter().any(|l| l.uri == post_u && l.range.start.line == 3 && l.range.start.character == 30));
+        assert!(
+            refs.iter().any(|l| l.uri == post_u
+                && l.range.start.line == 3
+                && l.range.start.character == 30)
+        );
     }
 
     // ── REQ-REF-02: FK by model class name ───────────────────────────────────
@@ -309,7 +377,11 @@ mod tests {
         state.update_file(&post_u, vec![post]);
 
         let refs = provide_references(&user_u, pos(0, 7), false, &state);
-        assert!(refs.iter().any(|l| l.uri == post_u && l.range.start.line == 6 && l.range.start.character == 22));
+        assert!(
+            refs.iter().any(|l| l.uri == post_u
+                && l.range.start.line == 6
+                && l.range.start.character == 22)
+        );
     }
 
     // ── REQ-REF-04: subclasses inheriting this model ──────────────────────────
@@ -328,7 +400,10 @@ mod tests {
         state.update_file(&child_u, vec![child]);
 
         let refs = provide_references(&base_u, pos(0, 7), false, &state);
-        assert!(refs.iter().any(|l| l.uri == child_u && l.range.start.line == 2));
+        assert!(
+            refs.iter()
+                .any(|l| l.uri == child_u && l.range.start.line == 2)
+        );
     }
 
     // ── REQ-REF-05: FK must match both table and column ───────────────────────
@@ -355,8 +430,15 @@ mod tests {
         state.update_file(&post_u, vec![post]);
 
         let refs = provide_references(&user_u, pos(1, 5), false, &state);
-        assert!(refs.iter().any(|l| l.range.start.line == 3 && l.range.start.character == 30), "should include users.id FK");
-        assert!(!refs.iter().any(|l| l.range.start.line == 4), "should NOT include posts.id FK");
+        assert!(
+            refs.iter()
+                .any(|l| l.range.start.line == 3 && l.range.start.character == 30),
+            "should include users.id FK"
+        );
+        assert!(
+            !refs.iter().any(|l| l.range.start.line == 4),
+            "should NOT include posts.id FK"
+        );
     }
 
     // ── REQ-REF-06: back_populates → relationship reference ───────────────────
@@ -379,7 +461,11 @@ mod tests {
         state.update_file(&post_u, vec![post]);
 
         let refs = provide_references(&user_u, pos(5, 6), false, &state);
-        assert!(refs.iter().any(|l| l.uri == post_u && l.range.start.line == 6 && l.range.start.character == 30));
+        assert!(
+            refs.iter().any(|l| l.uri == post_u
+                && l.range.start.line == 6
+                && l.range.start.character == 30)
+        );
     }
 
     // ── REQ-REF-07: no references → empty list ────────────────────────────────

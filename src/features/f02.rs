@@ -15,8 +15,14 @@ use crate::{
 
 fn to_lsp(r: crate::model::types::Range) -> Range {
     Range {
-        start: Position { line: r.start_line, character: r.start_col },
-        end: Position { line: r.end_line, character: r.end_col },
+        start: Position {
+            line: r.start_line,
+            character: r.start_col,
+        },
+        end: Position {
+            line: r.end_line,
+            character: r.end_col,
+        },
     }
 }
 
@@ -182,7 +188,9 @@ fn w203_mutable_default(
     col: &crate::model::types::Column,
     out: &mut Vec<Diagnostic>,
 ) {
-    let Some(ref default) = col.args.default else { return };
+    let Some(ref default) = col.args.default else {
+        return;
+    };
     if is_mutable_default(default) {
         out.push(diag(
             "SQLA-W203",
@@ -225,8 +233,7 @@ fn h205_naive_datetime(
         MappedType::DateTime => true,
         MappedType::Optional(inner) => matches!(**inner, MappedType::DateTime),
         MappedType::SqlType { name, args } => {
-            name.eq_ignore_ascii_case("datetime")
-                && !args.iter().any(|a| a.contains("timezone"))
+            name.eq_ignore_ascii_case("datetime") && !args.iter().any(|a| a.contains("timezone"))
         }
         _ => false,
     };
@@ -245,11 +252,7 @@ fn h205_naive_datetime(
 
 // ── 3xx — Foreign keys ────────────────────────────────────────────────────────
 
-fn w304_ambiguous_foreign_keys(
-    model: &Model,
-    state: &WorkspaceState,
-    out: &mut Vec<Diagnostic>,
-) {
+fn w304_ambiguous_foreign_keys(model: &Model, state: &WorkspaceState, out: &mut Vec<Diagnostic>) {
     for rel in model.relationships.values() {
         if rel.has_foreign_keys {
             continue; // explicitly disambiguated
@@ -259,10 +262,8 @@ fn w304_ambiguous_foreign_keys(
         }
 
         // Count FKs in this model pointing to the target's table or name
-        let target_table: Option<String> = state
-            .model_index
-            .get(&rel.target_model)
-            .and_then(|loc| {
+        let target_table: Option<String> =
+            state.model_index.get(&rel.target_model).and_then(|loc| {
                 let uri = &loc.uri;
                 let models = state.file_models.get(uri)?;
                 models
@@ -271,12 +272,16 @@ fn w304_ambiguous_foreign_keys(
                     .and_then(|m| m.table_name.clone())
             });
 
-        let fk_count = model.columns.values().filter(|col| {
-            col.foreign_key.as_ref().is_some_and(|fk| {
-                fk.table == rel.target_model
-                    || target_table.as_deref().is_some_and(|t| t == fk.table)
+        let fk_count = model
+            .columns
+            .values()
+            .filter(|col| {
+                col.foreign_key.as_ref().is_some_and(|fk| {
+                    fk.table == rel.target_model
+                        || target_table.as_deref().is_some_and(|t| t == fk.table)
+                })
             })
-        }).count();
+            .count();
 
         if fk_count >= 2 {
             out.push(diag(
@@ -332,15 +337,23 @@ fn w413_non_collection_mapped(
     }
 
     // Check counterpart's shape via back_populates
-    let Some(ref bp) = rel.back_populates else { return };
-    let Some(target_loc) = state.model_index.get(&rel.target_model) else { return };
+    let Some(ref bp) = rel.back_populates else {
+        return;
+    };
+    let Some(target_loc) = state.model_index.get(&rel.target_model) else {
+        return;
+    };
     let uri = target_loc.uri.clone();
     drop(target_loc);
-    let Some(file_models) = state.file_models.get(&uri) else { return };
+    let Some(file_models) = state.file_models.get(&uri) else {
+        return;
+    };
     let Some(target_model) = file_models.iter().find(|m| m.name == rel.target_model) else {
         return;
     };
-    let Some(target_rel) = target_model.relationships.get(bp) else { return };
+    let Some(target_rel) = target_model.relationships.get(bp) else {
+        return;
+    };
 
     // If the counterpart is a list relationship and THIS is scalar, the roles are:
     // target = one-to-many, this = many-to-one. That's normal (scalar is correct here).
@@ -472,7 +485,12 @@ mod tests {
     use crate::state::WorkspaceState;
 
     fn def_range() -> Range {
-        Range { start_line: 0, start_col: 0, end_line: 0, end_col: 10 }
+        Range {
+            start_line: 0,
+            start_col: 0,
+            end_line: 0,
+            end_col: 10,
+        }
     }
 
     fn bare_model(name: &str, table: Option<&str>) -> Model {
@@ -750,7 +768,8 @@ mod tests {
             });
             post.columns.insert(col_name.to_string(), col);
         }
-        post.relationships.insert("author".to_string(), rel("author", "User", false));
+        post.relationships
+            .insert("author".to_string(), rel("author", "User", false));
 
         let diags = check_file(&[post], &state);
         assert!(diags.iter().any(|d| code(d) == "SQLA-W304"), "{diags:?}");
@@ -791,7 +810,9 @@ mod tests {
         let state = WorkspaceState::new();
         let mut model = bare_model("Comment", Some("comments"));
         model.columns.insert("id".to_string(), pk_col("id"));
-        model.relationships.insert("parent".to_string(), rel("parent", "Comment", false));
+        model
+            .relationships
+            .insert("parent".to_string(), rel("parent", "Comment", false));
         let diags = check_file(&[model], &state);
         assert!(diags.iter().any(|d| code(d) == "SQLA-W411"), "{diags:?}");
     }
@@ -815,7 +836,9 @@ mod tests {
         let state = WorkspaceState::new();
         let mut model = bare_model("Post", Some("posts"));
         model.columns.insert("id".to_string(), pk_col("id"));
-        model.relationships.insert("author".to_string(), rel("author", "User", false));
+        model
+            .relationships
+            .insert("author".to_string(), rel("author", "User", false));
         let diags = check_file(&[model], &state);
         assert!(diags.iter().any(|d| code(d) == "SQLA-H414"), "{diags:?}");
     }
@@ -869,7 +892,9 @@ mod tests {
         let diags = check_file(&[model], &state);
         let d = diags.iter().find(|d| code(d) == "SQLA-W501").unwrap();
         assert!(
-            d.tags.as_ref().is_some_and(|t| t.contains(&DiagnosticTag::DEPRECATED)),
+            d.tags
+                .as_ref()
+                .is_some_and(|t| t.contains(&DiagnosticTag::DEPRECATED)),
             "SQLA-W501 must carry the Deprecated tag"
         );
     }
@@ -897,7 +922,9 @@ mod tests {
             let path = fixtures.join(rel_path);
             let src = fs::read_to_string(&path).unwrap();
             let mut parser = tree_sitter::Parser::new();
-            parser.set_language(&tree_sitter_python::LANGUAGE.into()).unwrap();
+            parser
+                .set_language(&tree_sitter_python::LANGUAGE.into())
+                .unwrap();
             let tree = parser.parse(&src, None).unwrap();
             let models = extract_models(&src, &tree);
             let uri: tower_lsp_server::ls_types::Uri =

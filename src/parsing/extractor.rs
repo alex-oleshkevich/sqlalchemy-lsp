@@ -228,12 +228,24 @@ fn handle_from_import(node: Node, source: &[u8], st: &mut SymbolTable) {
                 ) {
                     let orig = node_text(n, source).to_string();
                     let local = node_text(a, source).to_string();
-                    st.bindings.insert(local, Binding { module: module.clone(), name: orig });
+                    st.bindings.insert(
+                        local,
+                        Binding {
+                            module: module.clone(),
+                            name: orig,
+                        },
+                    );
                 }
             }
             "dotted_name" => {
                 let name = node_text(child, source).to_string();
-                st.bindings.insert(name.clone(), Binding { module: module.clone(), name });
+                st.bindings.insert(
+                    name.clone(),
+                    Binding {
+                        module: module.clone(),
+                        name,
+                    },
+                );
             }
             _ => {}
         }
@@ -300,11 +312,7 @@ pub fn extract_models(source: &str, tree: &Tree) -> Vec<Model> {
 /// A class is a declarative base only if it directly extends an SA abstract
 /// base (`DeclarativeBase` etc.). User-defined intermediate bases like `class
 /// Base(DeclarativeBase)` are bases; `class User(Base)` is a model, not a base.
-fn class_is_declarative_base(
-    class_node: &Node,
-    source: &[u8],
-    sym: &SymbolTable,
-) -> bool {
+fn class_is_declarative_base(class_node: &Node, source: &[u8], sym: &SymbolTable) -> bool {
     let Some(args) = class_node.child_by_field_name("superclasses") else {
         return false;
     };
@@ -317,11 +325,7 @@ fn class_is_declarative_base(
     false
 }
 
-fn class_is_model(
-    class_node: &Node,
-    source: &[u8],
-    bases: &BaseRegistry,
-) -> bool {
+fn class_is_model(class_node: &Node, source: &[u8], bases: &BaseRegistry) -> bool {
     if class_body_has_tablename(class_node, source) {
         return true;
     }
@@ -858,7 +862,12 @@ fn parse_foreign_key(fk_call: &Node, source: &[u8]) -> Option<ForeignKeyRef> {
     let table = raw_text[..dot].to_string();
     let column = raw_text[dot + 1..].to_string();
     let range = ts_range(first);
-    Some(ForeignKeyRef { table, column, raw_text: raw_text.to_string(), range })
+    Some(ForeignKeyRef {
+        table,
+        column,
+        raw_text: raw_text.to_string(),
+        range,
+    })
 }
 
 fn infer_nullable(mt: &MappedType, explicit: bool) -> bool {
@@ -927,13 +936,22 @@ pub fn parse_inner_type(type_str: &str, sym: &SymbolTable) -> MappedType {
                 } else {
                     args_text.split(',').map(|a| a.trim().to_string()).collect()
                 };
-                MappedType::SqlType { name: type_name.to_string(), args: type_args }
+                MappedType::SqlType {
+                    name: type_name.to_string(),
+                    args: type_args,
+                }
             } else if SA_TYPE_NAMES.contains(&s) {
-                MappedType::SqlType { name: s.to_string(), args: vec![] }
+                MappedType::SqlType {
+                    name: s.to_string(),
+                    args: vec![],
+                }
             } else if let Some(canonical) = sym.resolve(s) {
                 let base = canonical.rsplit('.').next().unwrap_or(s);
                 if SA_TYPE_NAMES.contains(&base) {
-                    MappedType::SqlType { name: base.to_string(), args: vec![] }
+                    MappedType::SqlType {
+                        name: base.to_string(),
+                        args: vec![],
+                    }
                 } else {
                     MappedType::Unknown(s.to_string())
                 }
@@ -945,9 +963,22 @@ pub fn parse_inner_type(type_str: &str, sym: &SymbolTable) -> MappedType {
 }
 
 const SA_TYPE_NAMES: &[&str] = &[
-    "String", "Integer", "Float", "Boolean", "DateTime", "Text", "BigInteger",
-    "SmallInteger", "Numeric", "Date", "Time", "LargeBinary", "JSON", "ARRAY",
-    "UUID", "Interval",
+    "String",
+    "Integer",
+    "Float",
+    "Boolean",
+    "DateTime",
+    "Text",
+    "BigInteger",
+    "SmallInteger",
+    "Numeric",
+    "Date",
+    "Time",
+    "LargeBinary",
+    "JSON",
+    "ARRAY",
+    "UUID",
+    "Interval",
 ];
 
 fn strip_generic_wrapper<'a>(s: &'a str, names: &[&str]) -> Option<&'a str> {
@@ -1057,7 +1088,10 @@ mod tests {
         let tree = parse(src);
         let st = build_symbol_table(tree.root_node(), src.as_bytes());
         assert!(st.is_relationship("rel"));
-        assert!(!st.is_relationship("relationship"), "unimported name must not match");
+        assert!(
+            !st.is_relationship("relationship"),
+            "unimported name must not match"
+        );
     }
 
     #[test]
@@ -1065,7 +1099,10 @@ mod tests {
         let src = "import sqlalchemy as sa\n";
         let tree = parse(src);
         let st = build_symbol_table(tree.root_node(), src.as_bytes());
-        assert_eq!(st.resolve("sa.String").as_deref(), Some("sqlalchemy.String"));
+        assert_eq!(
+            st.resolve("sa.String").as_deref(),
+            Some("sqlalchemy.String")
+        );
     }
 
     #[test]
@@ -1080,7 +1117,10 @@ mod tests {
 
     #[test]
     fn parse_mapped_int() {
-        assert!(matches!(parse_mapped_type("Mapped[int]", &sym()), MappedType::Int));
+        assert!(matches!(
+            parse_mapped_type("Mapped[int]", &sym()),
+            MappedType::Int
+        ));
     }
 
     #[test]
@@ -1119,8 +1159,10 @@ mod tests {
 
     #[test]
     fn annotated_unwrap() {
-        let mt =
-            parse_mapped_type("Mapped[Annotated[int, mapped_column(primary_key=True)]]", &sym());
+        let mt = parse_mapped_type(
+            "Mapped[Annotated[int, mapped_column(primary_key=True)]]",
+            &sym(),
+        );
         assert!(matches!(mt, MappedType::Int));
     }
 
@@ -1199,7 +1241,10 @@ class User(Base):
 "#;
         let tree = parse(src);
         let models = extract_models(src, &tree);
-        let rel = models[0].relationships.get("posts").expect("posts relationship");
+        let rel = models[0]
+            .relationships
+            .get("posts")
+            .expect("posts relationship");
         assert_eq!(rel.target_model, "Post");
         assert_eq!(rel.back_populates.as_deref(), Some("author"));
         assert!(rel.is_list);

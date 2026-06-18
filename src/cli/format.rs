@@ -23,7 +23,14 @@ pub enum Reporter {
 
 impl Reporter {
     pub fn is_machine(&self) -> bool {
-        matches!(self, Reporter::Json | Reporter::JsonLines | Reporter::Github | Reporter::Gitlab | Reporter::Junit)
+        matches!(
+            self,
+            Reporter::Json
+                | Reporter::JsonLines
+                | Reporter::Github
+                | Reporter::Gitlab
+                | Reporter::Junit
+        )
     }
 }
 
@@ -116,8 +123,14 @@ fn write_summary<W: Write>(
         return;
     }
 
-    let safe_fixable = findings.iter().filter(|f| matches!(f.fix_kind, FixKind::Safe)).count();
-    let unsafe_fixable = findings.iter().filter(|f| matches!(f.fix_kind, FixKind::Unsafe)).count();
+    let safe_fixable = findings
+        .iter()
+        .filter(|f| matches!(f.fix_kind, FixKind::Safe))
+        .count();
+    let unsafe_fixable = findings
+        .iter()
+        .filter(|f| matches!(f.fix_kind, FixKind::Unsafe))
+        .count();
 
     if safe_fixable > 0 {
         let _ = writeln!(out, "[*] {safe_fixable} fixable with the `--fix` option.");
@@ -129,28 +142,47 @@ fn write_summary<W: Write>(
     if !findings.is_empty() {
         let (errors, warnings, infos, hints) = count_by_severity(findings);
         let mut parts: Vec<String> = Vec::new();
-        if errors > 0 { parts.push(format!("{errors} errors")); }
-        if warnings > 0 { parts.push(format!("{warnings} warnings")); }
-        if infos > 0 { parts.push(format!("{infos} info")); }
-        if hints > 0 { parts.push(format!("{hints} hints")); }
+        if errors > 0 {
+            parts.push(format!("{errors} errors"));
+        }
+        if warnings > 0 {
+            parts.push(format!("{warnings} warnings"));
+        }
+        if infos > 0 {
+            parts.push(format!("{infos} info"));
+        }
+        if hints > 0 {
+            parts.push(format!("{hints} hints"));
+        }
         let n = findings.len();
-        let files: std::collections::HashSet<&str> = findings.iter().map(|f| f.rel_path.as_str()).collect();
+        let files: std::collections::HashSet<&str> =
+            findings.iter().map(|f| f.rel_path.as_str()).collect();
         let problem_word = if n == 1 { "problem" } else { "problems" };
-        let _ = writeln!(out, "Found {n} {problem_word} ({}) in {} files (checked {files_checked} files).",
-            parts.join(", "), files.len());
+        let _ = writeln!(
+            out,
+            "Found {n} {problem_word} ({}) in {} files (checked {files_checked} files).",
+            parts.join(", "),
+            files.len()
+        );
     }
 
     if let Some(fr) = fix_result {
         let rem = fr.remaining;
         if fr.unsafe_fixable > 0 {
-            let _ = writeln!(out, "Fixed {} problem{}; {rem} remaining ({} fixable with --unsafe).",
+            let _ = writeln!(
+                out,
+                "Fixed {} problem{}; {rem} remaining ({} fixable with --unsafe).",
                 fr.fixed,
                 if fr.fixed == 1 { "" } else { "s" },
-                fr.unsafe_fixable);
+                fr.unsafe_fixable
+            );
         } else {
-            let _ = writeln!(out, "Fixed {} problem{}; {rem} remaining.",
+            let _ = writeln!(
+                out,
+                "Fixed {} problem{}; {rem} remaining.",
                 fr.fixed,
-                if fr.fixed == 1 { "" } else { "s" });
+                if fr.fixed == 1 { "" } else { "s" }
+            );
         }
     }
 }
@@ -165,7 +197,11 @@ fn render_concise<W: Write>(
     out: &mut W,
 ) {
     for f in findings {
-        let _ = writeln!(out, "{}:{}:{}: {} {}", f.rel_path, f.line, f.col, f.code, f.message);
+        let _ = writeln!(
+            out,
+            "{}:{}:{}: {} {}",
+            f.rel_path, f.line, f.col, f.code, f.message
+        );
     }
     write_summary(findings, files_checked, fix_result, out);
 }
@@ -209,7 +245,11 @@ fn render_full<W: Write>(
         if let Some(help) = help_for_code(&f.code) {
             let _ = writeln!(out, "   = help: {help}");
         }
-        let _ = writeln!(out, "   = note: disable with `# noqa: {}` or in [tool.sqlalchemy-lsp]", f.code);
+        let _ = writeln!(
+            out,
+            "   = note: disable with `# noqa: {}` or in [tool.sqlalchemy-lsp]",
+            f.code
+        );
         let _ = writeln!(out);
     }
     write_summary(findings, files_checked, fix_result, out);
@@ -219,9 +259,13 @@ fn help_for_code(code: &str) -> Option<&'static str> {
     match code {
         "SQLA-W101" => Some("add `__tablename__ = \"table_name\"` to the class body"),
         "SQLA-W303" => Some("align the column type with the FK target, or change the target"),
-        "SQLA-W402" => Some("update `back_populates` to match the attribute name on the other side"),
+        "SQLA-W402" => {
+            Some("update `back_populates` to match the attribute name on the other side")
+        }
         "SQLA-W403" => Some("add a matching `back_populates` on the target model"),
-        "SQLA-W409" => Some("valid cascade values: all, save-update, merge, expunge, delete, delete-orphan"),
+        "SQLA-W409" => {
+            Some("valid cascade values: all, save-update, merge, expunge, delete, delete-orphan")
+        }
         _ => None,
     }
 }
@@ -236,7 +280,8 @@ fn render_grouped<W: Write>(
     out: &mut W,
 ) {
     // Group by file path
-    let mut by_file: std::collections::BTreeMap<&str, Vec<&Finding>> = std::collections::BTreeMap::new();
+    let mut by_file: std::collections::BTreeMap<&str, Vec<&Finding>> =
+        std::collections::BTreeMap::new();
     for f in findings {
         by_file.entry(f.rel_path.as_str()).or_default().push(f);
     }
@@ -275,15 +320,25 @@ struct JsonFix<'a> {
 
 fn to_json_finding(f: &Finding) -> JsonFinding<'_> {
     let fix = match f.fix_kind {
-        FixKind::Safe => Some(JsonFix { applicability: "safe" }),
-        FixKind::Unsafe => Some(JsonFix { applicability: "unsafe" }),
+        FixKind::Safe => Some(JsonFix {
+            applicability: "safe",
+        }),
+        FixKind::Unsafe => Some(JsonFix {
+            applicability: "unsafe",
+        }),
         FixKind::None => None,
     };
     JsonFinding {
         code: &f.code,
         message: &f.message,
-        location: JsonLocation { row: f.line, column: f.col },
-        end_location: JsonLocation { row: f.end_line, column: f.end_col },
+        location: JsonLocation {
+            row: f.line,
+            column: f.col,
+        },
+        end_location: JsonLocation {
+            row: f.end_line,
+            column: f.end_col,
+        },
         filename: &f.rel_path,
         severity: f.severity_str(),
         fix,
@@ -292,7 +347,11 @@ fn to_json_finding(f: &Finding) -> JsonFinding<'_> {
 
 fn render_json<W: Write>(findings: &[Finding], out: &mut W) {
     let jf: Vec<_> = findings.iter().map(to_json_finding).collect();
-    let _ = writeln!(out, "{}", serde_json::to_string_pretty(&jf).unwrap_or_default());
+    let _ = writeln!(
+        out,
+        "{}",
+        serde_json::to_string_pretty(&jf).unwrap_or_default()
+    );
 }
 
 fn render_json_lines<W: Write>(findings: &[Finding], out: &mut W) {
@@ -363,7 +422,11 @@ fn render_gitlab<W: Write>(findings: &[Finding], out: &mut W) {
             }
         })
         .collect();
-    let _ = writeln!(out, "{}", serde_json::to_string_pretty(&jf).unwrap_or_default());
+    let _ = writeln!(
+        out,
+        "{}",
+        serde_json::to_string_pretty(&jf).unwrap_or_default()
+    );
 }
 
 fn md5_fingerprint(path: &str, code: &str, line: u32) -> u64 {
@@ -426,14 +489,17 @@ mod tests {
         Finding {
             rel_path: "models/post.py".to_string(),
             code: "SQLA-W303".to_string(),
-            message: "FK type mismatch: `author_id` is Mapped[str] but `users.id` is Integer".to_string(),
+            message: "FK type mismatch: `author_id` is Mapped[str] but `users.id` is Integer"
+                .to_string(),
             severity: DiagnosticSeverity::WARNING,
             line: 14,
             col: 5,
             end_line: 14,
             end_col: 14,
             fix_kind: FixKind::None,
-            source_line: Some("    author_id: Mapped[str] = mapped_column(ForeignKey(\"users.id\"))".to_string()),
+            source_line: Some(
+                "    author_id: Mapped[str] = mapped_column(ForeignKey(\"users.id\"))".to_string(),
+            ),
         }
     }
 
@@ -448,7 +514,10 @@ mod tests {
     #[test]
     fn req_cli_08_concise_line_format() {
         let out = render_to_string(&[sample()], &Reporter::Concise);
-        assert!(out.contains("models/post.py:14:5: SQLA-W303"), "concise line: {out}");
+        assert!(
+            out.contains("models/post.py:14:5: SQLA-W303"),
+            "concise line: {out}"
+        );
     }
 
     // ── REQ-CLI-09: summary wording ──────────────────────────────────────────
@@ -471,12 +540,24 @@ mod tests {
 
     #[test]
     fn req_cli_09_summary_fixable_hints() {
-        let safe = Finding { fix_kind: FixKind::Safe, ..sample() };
-        let unsafe_ = Finding { fix_kind: FixKind::Unsafe, ..sample() };
+        let safe = Finding {
+            fix_kind: FixKind::Safe,
+            ..sample()
+        };
+        let unsafe_ = Finding {
+            fix_kind: FixKind::Unsafe,
+            ..sample()
+        };
         let findings = vec![safe, unsafe_];
         let out = render_to_string(&findings, &Reporter::Concise);
-        assert!(out.contains("[*] 1 fixable with the `--fix` option."), "safe hint: {out}");
-        assert!(out.contains("[*] 1 fixable with `--fix --unsafe`."), "unsafe hint: {out}");
+        assert!(
+            out.contains("[*] 1 fixable with the `--fix` option."),
+            "safe hint: {out}"
+        );
+        assert!(
+            out.contains("[*] 1 fixable with `--fix --unsafe`."),
+            "unsafe hint: {out}"
+        );
     }
 
     #[test]
@@ -492,8 +573,14 @@ mod tests {
     #[test]
     fn req_cli_07_full_reporter() {
         let out = render_to_string(&[sample()], &Reporter::Full);
-        assert!(out.contains("SQLA-W303 FK type mismatch"), "full header: {out}");
-        assert!(out.contains("--> models/post.py:14:5"), "full location: {out}");
+        assert!(
+            out.contains("SQLA-W303 FK type mismatch"),
+            "full header: {out}"
+        );
+        assert!(
+            out.contains("--> models/post.py:14:5"),
+            "full location: {out}"
+        );
         assert!(out.contains("# noqa: SQLA-W303"), "full note: {out}");
     }
 
@@ -535,8 +622,14 @@ mod tests {
     #[test]
     fn req_cli_07_github_reporter() {
         let out = render_to_string(&[sample()], &Reporter::Github);
-        assert!(out.starts_with("::warning title=sqlalchemy-lsp (SQLA-W303)"), "github: {out}");
-        assert!(out.contains("file=models/post.py,line=14,col=5"), "github loc: {out}");
+        assert!(
+            out.starts_with("::warning title=sqlalchemy-lsp (SQLA-W303)"),
+            "github: {out}"
+        );
+        assert!(
+            out.contains("file=models/post.py,line=14,col=5"),
+            "github loc: {out}"
+        );
     }
 
     #[test]
@@ -559,6 +652,9 @@ mod tests {
     #[test]
     fn req_cli_07_pylint_reporter() {
         let out = render_to_string(&[sample()], &Reporter::Pylint);
-        assert!(out.contains("models/post.py:14: [SQLA-W303]"), "pylint: {out}");
+        assert!(
+            out.contains("models/post.py:14: [SQLA-W303]"),
+            "pylint: {out}"
+        );
     }
 }

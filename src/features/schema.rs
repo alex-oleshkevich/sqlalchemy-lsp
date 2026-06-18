@@ -101,9 +101,15 @@ fn render_mermaid(models: &[Model]) -> String {
         for col in sorted_columns(model) {
             let typ = mermaid_type(&col.mapped_type);
             let mut keys: Vec<&str> = Vec::new();
-            if col.args.primary_key { keys.push("PK"); }
-            if col.foreign_key.is_some() { keys.push("FK"); }
-            if col.args.unique { keys.push("UK"); }
+            if col.args.primary_key {
+                keys.push("PK");
+            }
+            if col.foreign_key.is_some() {
+                keys.push("FK");
+            }
+            if col.args.unique {
+                keys.push("UK");
+            }
             let key_str = if keys.is_empty() {
                 String::new()
             } else {
@@ -135,9 +141,15 @@ fn render_graphviz(models: &[Model]) -> String {
         for col in sorted_columns(model) {
             let typ = schema_type(&col.mapped_type);
             let mut markers: Vec<&str> = Vec::new();
-            if col.args.primary_key { markers.push("PK"); }
-            if col.foreign_key.is_some() { markers.push("FK"); }
-            if col.args.unique { markers.push("UQ"); }
+            if col.args.primary_key {
+                markers.push("PK");
+            }
+            if col.foreign_key.is_some() {
+                markers.push("FK");
+            }
+            if col.args.unique {
+                markers.push("UQ");
+            }
             let marker_str = if markers.is_empty() {
                 String::new()
             } else {
@@ -202,10 +214,18 @@ fn render_ascii(models: &[Model]) -> String {
             .map(|c| {
                 let typ = schema_type(&c.mapped_type);
                 let mut flags: Vec<&str> = Vec::new();
-                if c.args.primary_key { flags.push("PK"); }
-                if c.foreign_key.is_some() { flags.push("FK"); }
-                if c.args.unique { flags.push("UQ"); }
-                if !c.args.nullable { flags.push("NN"); }
+                if c.args.primary_key {
+                    flags.push("PK");
+                }
+                if c.foreign_key.is_some() {
+                    flags.push("FK");
+                }
+                if c.args.unique {
+                    flags.push("UQ");
+                }
+                if !c.args.nullable {
+                    flags.push("NN");
+                }
                 if flags.is_empty() {
                     format!("{}: {}", c.name, typ)
                 } else {
@@ -230,8 +250,20 @@ fn render_ascii(models: &[Model]) -> String {
         let content_width = header
             .chars()
             .count()
-            .max(col_lines.iter().map(|l| l.chars().count()).max().unwrap_or(0))
-            .max(rel_lines.iter().map(|l| l.chars().count()).max().unwrap_or(0));
+            .max(
+                col_lines
+                    .iter()
+                    .map(|l| l.chars().count())
+                    .max()
+                    .unwrap_or(0),
+            )
+            .max(
+                rel_lines
+                    .iter()
+                    .map(|l| l.chars().count())
+                    .max()
+                    .unwrap_or(0),
+            );
         let inner = content_width + 2;
 
         let bar: String = "\u{2500}".repeat(inner);
@@ -243,7 +275,11 @@ fn render_ascii(models: &[Model]) -> String {
             let n = s.chars().count();
             let left = (inner - n) / 2;
             let right = inner - n - left;
-            format!("\u{2502}{}{s}{}\u{2502}", " ".repeat(left), " ".repeat(right))
+            format!(
+                "\u{2502}{}{s}{}\u{2502}",
+                " ".repeat(left),
+                " ".repeat(right)
+            )
         };
         let pad_left = |s: &str| -> String {
             let n = s.chars().count();
@@ -309,19 +345,41 @@ mod tests {
     }
 
     fn rng(sl: u32, sc: u32, el: u32, ec: u32) -> MRange {
-        MRange { start_line: sl, start_col: sc, end_line: el, end_col: ec }
+        MRange {
+            start_line: sl,
+            start_col: sc,
+            end_line: el,
+            end_col: ec,
+        }
     }
 
-    fn mk_col(name: &str, mt: MappedType, pk: bool, fk: Option<(&str, &str)>, uq: bool, nullable: bool, line: u32) -> Column {
+    fn mk_col(
+        name: &str,
+        mt: MappedType,
+        pk: bool,
+        fk: Option<(&str, &str)>,
+        uq: bool,
+        nullable: bool,
+        line: u32,
+    ) -> Column {
         let r = rng(line, 4, line, 40);
         Column {
             name: name.to_string(),
             key: None,
             mapped_type: mt,
-            args: ColumnArgs { primary_key: pk, nullable, unique: uq, index: false, default: None, server_default: None },
+            args: ColumnArgs {
+                primary_key: pk,
+                nullable,
+                unique: uq,
+                index: false,
+                default: None,
+                server_default: None,
+            },
             foreign_key: fk.map(|(t, c)| ForeignKeyRef {
-                table: t.to_string(), column: c.to_string(),
-                raw_text: format!("{t}.{c}"), range: r,
+                table: t.to_string(),
+                column: c.to_string(),
+                raw_text: format!("{t}.{c}"),
+                range: r,
             }),
             doc: None,
             name_range: r,
@@ -329,24 +387,45 @@ mod tests {
         }
     }
 
-    fn mk_rel(name: &str, target: &str, is_list: bool, secondary: Option<&str>, line: u32) -> Relationship {
+    fn mk_rel(
+        name: &str,
+        target: &str,
+        is_list: bool,
+        secondary: Option<&str>,
+        line: u32,
+    ) -> Relationship {
         let r = rng(line, 4, line, 60);
         Relationship {
-            name: name.to_string(), target_model: target.to_string(),
-            explicit_target: None, back_populates: None, lazy: None,
-            uselist: None, secondary: secondary.map(|s| s.to_string()),
-            cascade: None, is_list, backref: None, remote_side: false,
-            has_foreign_keys: false, viewonly: None,
-            name_range: r, full_range: r, target_range: None,
-            back_populates_range: None, cascade_range: None,
+            name: name.to_string(),
+            target_model: target.to_string(),
+            explicit_target: None,
+            back_populates: None,
+            lazy: None,
+            uselist: None,
+            secondary: secondary.map(|s| s.to_string()),
+            cascade: None,
+            is_list,
+            backref: None,
+            remote_side: false,
+            has_foreign_keys: false,
+            viewonly: None,
+            name_range: r,
+            full_range: r,
+            target_range: None,
+            back_populates_range: None,
+            cascade_range: None,
         }
     }
 
     fn mk_model(name: &str, table: &str, cols: Vec<Column>, rels: Vec<Relationship>) -> Model {
         let mut columns = HashMap::new();
-        for c in cols { columns.insert(c.name.clone(), c); }
+        for c in cols {
+            columns.insert(c.name.clone(), c);
+        }
         let mut relationships = HashMap::new();
-        for r in rels { relationships.insert(r.name.clone(), r); }
+        for r in rels {
+            relationships.insert(r.name.clone(), r);
+        }
         Model {
             name: name.to_string(),
             table_name: Some(table.to_string()),
@@ -373,12 +452,18 @@ mod tests {
 
     #[test]
     fn req_schema_01_includes_all_models() {
-        let user = mk_model("User", "users",
+        let user = mk_model(
+            "User",
+            "users",
             vec![mk_col("id", MappedType::Int, true, None, false, false, 1)],
-            vec![]);
-        let post = mk_model("Post", "posts",
+            vec![],
+        );
+        let post = mk_model(
+            "Post",
+            "posts",
             vec![mk_col("id", MappedType::Int, true, None, false, false, 1)],
-            vec![]);
+            vec![],
+        );
         let state = build_state(vec![(user, "file:///user.py"), (post, "file:///post.py")]);
 
         let mmd = render_schema(&state, "mermaid");
@@ -417,26 +502,47 @@ mod tests {
 
     #[test]
     fn req_schema_07_ascii_markers() {
-        let post = mk_model("Post", "posts", vec![
-            mk_col("id", MappedType::Int, true, None, false, false, 1),
-            mk_col("author_id", MappedType::Int, false, Some(("users", "id")), false, false, 2),
-            mk_col("slug", MappedType::Str, false, None, true, false, 3),
-            mk_col("body", MappedType::Str, false, None, false, true, 4),
-        ], vec![]);
+        let post = mk_model(
+            "Post",
+            "posts",
+            vec![
+                mk_col("id", MappedType::Int, true, None, false, false, 1),
+                mk_col(
+                    "author_id",
+                    MappedType::Int,
+                    false,
+                    Some(("users", "id")),
+                    false,
+                    false,
+                    2,
+                ),
+                mk_col("slug", MappedType::Str, false, None, true, false, 3),
+                mk_col("body", MappedType::Str, false, None, false, true, 4),
+            ],
+            vec![],
+        );
         let state = build_state(vec![(post, "file:///post.py")]);
         let ascii = render_schema(&state, "ascii");
         assert!(ascii.contains("[PK,NN]"), "id should have PK,NN");
         assert!(ascii.contains("[FK,NN]"), "author_id should have FK,NN");
         assert!(ascii.contains("[UQ,NN]"), "slug should have UQ,NN");
-        assert!(ascii.contains("body: str\n") || ascii.contains("body: str "), "body has no flags");
+        assert!(
+            ascii.contains("body: str\n") || ascii.contains("body: str "),
+            "body has no flags"
+        );
     }
 
     #[test]
     fn req_schema_07_mermaid_markers() {
-        let model = mk_model("User", "users", vec![
-            mk_col("id", MappedType::Int, true, None, false, false, 1),
-            mk_col("email", MappedType::Str, false, None, true, false, 2),
-        ], vec![]);
+        let model = mk_model(
+            "User",
+            "users",
+            vec![
+                mk_col("id", MappedType::Int, true, None, false, false, 1),
+                mk_col("email", MappedType::Str, false, None, true, false, 2),
+            ],
+            vec![],
+        );
         let state = build_state(vec![(model, "file:///user.py")]);
         let mmd = render_schema(&state, "mermaid");
         assert!(mmd.contains("int id PK"), "id should have PK");
@@ -445,14 +551,18 @@ mod tests {
 
     #[test]
     fn req_schema_07_mermaid_m2m_cardinality() {
-        let post = mk_model("Post", "posts", vec![
-            mk_col("id", MappedType::Int, true, None, false, false, 1),
-        ], vec![
-            mk_rel("tags", "Tag", true, Some("post_tags"), 5),
-        ]);
-        let tag = mk_model("Tag", "tags", vec![
-            mk_col("id", MappedType::Int, true, None, false, false, 1),
-        ], vec![]);
+        let post = mk_model(
+            "Post",
+            "posts",
+            vec![mk_col("id", MappedType::Int, true, None, false, false, 1)],
+            vec![mk_rel("tags", "Tag", true, Some("post_tags"), 5)],
+        );
+        let tag = mk_model(
+            "Tag",
+            "tags",
+            vec![mk_col("id", MappedType::Int, true, None, false, false, 1)],
+            vec![],
+        );
         let state = build_state(vec![(post, "file:///post.py"), (tag, "file:///tag.py")]);
         let mmd = render_schema(&state, "mermaid");
         assert!(mmd.contains("}o--o{"), "m2m cardinality glyph");
@@ -460,14 +570,18 @@ mod tests {
 
     #[test]
     fn req_schema_07_ascii_m2m_label() {
-        let post = mk_model("Post", "posts", vec![
-            mk_col("id", MappedType::Int, true, None, false, false, 1),
-        ], vec![
-            mk_rel("tags", "Tag", true, Some("post_tags"), 5),
-        ]);
-        let tag = mk_model("Tag", "tags", vec![
-            mk_col("id", MappedType::Int, true, None, false, false, 1),
-        ], vec![]);
+        let post = mk_model(
+            "Post",
+            "posts",
+            vec![mk_col("id", MappedType::Int, true, None, false, false, 1)],
+            vec![mk_rel("tags", "Tag", true, Some("post_tags"), 5)],
+        );
+        let tag = mk_model(
+            "Tag",
+            "tags",
+            vec![mk_col("id", MappedType::Int, true, None, false, false, 1)],
+            vec![],
+        );
         let state = build_state(vec![(post, "file:///post.py"), (tag, "file:///tag.py")]);
         let ascii = render_schema(&state, "ascii");
         assert!(ascii.contains("list[Tag] (m2m)"), "m2m label in ascii");
@@ -478,7 +592,10 @@ mod tests {
     #[test]
     fn req_schema_08_empty_workspace() {
         let state = WorkspaceState::new();
-        assert_eq!(render_schema(&state, "ascii"), "No SQLAlchemy models found in workspace.\n");
+        assert_eq!(
+            render_schema(&state, "ascii"),
+            "No SQLAlchemy models found in workspace.\n"
+        );
         assert!(render_schema(&state, "mermaid").contains("%% No SQLAlchemy models found"));
         assert!(render_schema(&state, "graphviz").contains("// No SQLAlchemy models found"));
     }
@@ -501,13 +618,29 @@ mod tests {
 
     #[test]
     fn ascii_foreign_keys_section() {
-        let post = mk_model("Post", "posts", vec![
-            mk_col("id", MappedType::Int, true, None, false, false, 1),
-            mk_col("author_id", MappedType::Int, false, Some(("users", "id")), false, false, 2),
-        ], vec![]);
-        let user = mk_model("User", "users", vec![
-            mk_col("id", MappedType::Int, true, None, false, false, 1),
-        ], vec![]);
+        let post = mk_model(
+            "Post",
+            "posts",
+            vec![
+                mk_col("id", MappedType::Int, true, None, false, false, 1),
+                mk_col(
+                    "author_id",
+                    MappedType::Int,
+                    false,
+                    Some(("users", "id")),
+                    false,
+                    false,
+                    2,
+                ),
+            ],
+            vec![],
+        );
+        let user = mk_model(
+            "User",
+            "users",
+            vec![mk_col("id", MappedType::Int, true, None, false, false, 1)],
+            vec![],
+        );
         let state = build_state(vec![(post, "file:///post.py"), (user, "file:///user.py")]);
         let ascii = render_schema(&state, "ascii");
         assert!(ascii.contains("Foreign Keys:"), "FK section header");
@@ -519,15 +652,22 @@ mod tests {
 
     #[test]
     fn unresolved_rel_target_dropped() {
-        let post = mk_model("Post", "posts", vec![
-            mk_col("id", MappedType::Int, true, None, false, false, 1),
-        ], vec![
-            mk_rel("ghost", "GhostModel", false, None, 5),
-        ]);
+        let post = mk_model(
+            "Post",
+            "posts",
+            vec![mk_col("id", MappedType::Int, true, None, false, false, 1)],
+            vec![mk_rel("ghost", "GhostModel", false, None, 5)],
+        );
         let state = build_state(vec![(post, "file:///post.py")]);
         let ascii = render_schema(&state, "ascii");
-        assert!(!ascii.contains("ghost"), "unresolved rel dropped from ascii");
+        assert!(
+            !ascii.contains("ghost"),
+            "unresolved rel dropped from ascii"
+        );
         let mmd = render_schema(&state, "mermaid");
-        assert!(!mmd.contains("GHOSTMODEL"), "unresolved rel dropped from mermaid");
+        assert!(
+            !mmd.contains("GHOSTMODEL"),
+            "unresolved rel dropped from mermaid"
+        );
     }
 }

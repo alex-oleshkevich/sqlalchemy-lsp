@@ -25,7 +25,11 @@ pub struct DiagnosticsConfig {
 
 impl Default for DiagnosticsConfig {
     fn default() -> Self {
-        Self { select: default_select(), ignore: vec![], severity: HashMap::new() }
+        Self {
+            select: default_select(),
+            ignore: vec![],
+            severity: HashMap::new(),
+        }
     }
 }
 
@@ -135,25 +139,37 @@ impl ParsedCode {
         if class == 0 {
             return None;
         }
-        Some(ParsedCode { severity_char: sev, class, rule })
+        Some(ParsedCode {
+            severity_char: sev,
+            class,
+            rule,
+        })
     }
 }
 
 /// Returns `true` if `code` belongs to the group identified by `token`
 /// (e.g. `"SQLA-W303"` matches `"SQLA-3xx"`).
 pub fn code_matches_class_token(code: &str, token: &str) -> bool {
-    let Some(code_rest) = code.strip_prefix("SQLA-") else { return false };
-    let Some(tok_rest) = token.strip_prefix("SQLA-") else { return false };
+    let Some(code_rest) = code.strip_prefix("SQLA-") else {
+        return false;
+    };
+    let Some(tok_rest) = token.strip_prefix("SQLA-") else {
+        return false;
+    };
     // token format: "<digit>xx"  (3 chars, ends with "xx")
     if tok_rest.len() != 3 || !tok_rest.ends_with("xx") {
         return false;
     }
-    let Some(tok_class) = tok_rest.chars().next() else { return false };
+    let Some(tok_class) = tok_rest.chars().next() else {
+        return false;
+    };
     // code format: "<SEV><digit><NN>"  (4 chars)
     if code_rest.len() != 4 {
         return false;
     }
-    let Some(code_class) = code_rest.chars().nth(1) else { return false };
+    let Some(code_class) = code_rest.chars().nth(1) else {
+        return false;
+    };
     tok_class == code_class
 }
 
@@ -220,7 +236,9 @@ pub struct CodeRegistry {
 
 impl CodeRegistry {
     pub fn new() -> Self {
-        Self { entries: Vec::new() }
+        Self {
+            entries: Vec::new(),
+        }
     }
 
     pub fn register(&mut self, entry: CodeEntry) {
@@ -242,9 +260,11 @@ impl CodeRegistry {
     pub fn codes_for_preset(&self, preset: Preset) -> Vec<&CodeEntry> {
         match preset {
             Preset::All => self.entries.iter().collect(),
-            Preset::Recommended => {
-                self.entries.iter().filter(|e| e.enabled_by_default).collect()
-            }
+            Preset::Recommended => self
+                .entries
+                .iter()
+                .filter(|e| e.enabled_by_default)
+                .collect(),
             Preset::None => vec![],
         }
     }
@@ -290,7 +310,10 @@ impl Default for CodeRegistry {
             class: 9,
             enabled_by_default: true,
             fix_kind: FixKind::Safe,
-            tags: DiagnosticTags { fixable: true, ..Default::default() },
+            tags: DiagnosticTags {
+                fixable: true,
+                ..Default::default()
+            },
         });
         reg
     }
@@ -307,10 +330,7 @@ pub struct ResolvedDiagnosticsConfig {
 impl ResolvedDiagnosticsConfig {
     /// Resolve select → ignore → severity (REQ-CFG-08).
     /// Returns the resolved config and a list of config warnings (unknown codes/tokens).
-    pub fn resolve(
-        diag: &DiagnosticsConfig,
-        registry: &CodeRegistry,
-    ) -> (Self, Vec<String>) {
+    pub fn resolve(diag: &DiagnosticsConfig, registry: &CodeRegistry) -> (Self, Vec<String>) {
         let mut warnings = Vec::new();
         let mut active: HashSet<String> = HashSet::new();
 
@@ -389,18 +409,20 @@ impl ResolvedDiagnosticsConfig {
             }
         }
 
-        (Self { active_codes: active, severity_overrides }, warnings)
+        (
+            Self {
+                active_codes: active,
+                severity_overrides,
+            },
+            warnings,
+        )
     }
 
     pub fn is_active(&self, code: &str) -> bool {
         self.active_codes.contains(code)
     }
 
-    pub fn effective_severity(
-        &self,
-        code: &str,
-        registry: &CodeRegistry,
-    ) -> Option<Severity> {
+    pub fn effective_severity(&self, code: &str, registry: &CodeRegistry) -> Option<Severity> {
         if let Some(&sev) = self.severity_overrides.get(code) {
             return Some(sev);
         }
@@ -439,7 +461,11 @@ impl NoqaMarker {
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
             .collect();
-        if codes.is_empty() { None } else { Some(NoqaMarker::Codes(codes)) }
+        if codes.is_empty() {
+            None
+        } else {
+            Some(NoqaMarker::Codes(codes))
+        }
     }
 
     /// Returns `true` if this marker suppresses `code`.
@@ -472,7 +498,10 @@ fn glob_matches_any(patterns: &[String], path: &str) -> bool {
             builder.add(g);
         }
     }
-    builder.build().map(|set| set.is_match(path)).unwrap_or(false)
+    builder
+        .build()
+        .map(|set| set.is_match(path))
+        .unwrap_or(false)
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -535,9 +564,18 @@ mod tests {
         let reg = registry();
         let off: Vec<_> = reg.all_codes().filter(|e| !e.enabled_by_default).collect();
         let off_codes: Vec<&str> = off.iter().map(|e| e.code.as_str()).collect();
-        assert!(off_codes.contains(&"SQLA-H416"), "H416 must be off by default");
-        assert!(off_codes.contains(&"SQLA-H602"), "H602 must be off by default");
-        assert!(off_codes.contains(&"SQLA-I207"), "I207 must be off by default");
+        assert!(
+            off_codes.contains(&"SQLA-H416"),
+            "H416 must be off by default"
+        );
+        assert!(
+            off_codes.contains(&"SQLA-H602"),
+            "H602 must be off by default"
+        );
+        assert!(
+            off_codes.contains(&"SQLA-I207"),
+            "I207 must be off by default"
+        );
         assert_eq!(off_codes.len(), 3, "exactly three off-by-default rules");
     }
 
@@ -648,10 +686,7 @@ mod tests {
 
     #[test]
     fn noqa_file() {
-        assert_eq!(
-            NoqaMarker::parse("# noqa: file"),
-            Some(NoqaMarker::File)
-        );
+        assert_eq!(NoqaMarker::parse("# noqa: file"), Some(NoqaMarker::File));
     }
 
     #[test]
@@ -674,7 +709,10 @@ mod tests {
     #[test]
     fn noqa_bare_suppresses_sqla_only() {
         assert!(NoqaMarker::Bare.suppresses("SQLA-W303"));
-        assert!(!NoqaMarker::Bare.suppresses("E501"), "foreign namespace not suppressed");
+        assert!(
+            !NoqaMarker::Bare.suppresses("E501"),
+            "foreign namespace not suppressed"
+        );
     }
 
     #[test]
@@ -695,8 +733,14 @@ mod tests {
 
     #[test]
     fn merge_scalar_overlay_wins() {
-        let base = Config { target_dialect: Some("sqlite".to_string()), ..Default::default() };
-        let overlay = Config { target_dialect: Some("postgresql".to_string()), ..Default::default() };
+        let base = Config {
+            target_dialect: Some("sqlite".to_string()),
+            ..Default::default()
+        };
+        let overlay = Config {
+            target_dialect: Some("postgresql".to_string()),
+            ..Default::default()
+        };
         let merged = base.merge(overlay);
         assert_eq!(merged.target_dialect.as_deref(), Some("postgresql"));
     }

@@ -14,29 +14,27 @@ use tower_lsp_server::{
     jsonrpc::Result,
     ls_types::{
         CodeAction, CodeActionKind, CodeActionOptions, CodeActionOrCommand, CodeActionParams,
-        CodeActionProviderCapability,
-        CompletionOptions, CompletionParams, CompletionResponse,
-        ExecuteCommandOptions, ExecuteCommandParams,
-        GotoDefinitionParams, DiagnosticOptions, DiagnosticServerCapabilities, Hover,
-        HoverParams,
-        DidChangeTextDocumentParams, DidChangeWatchedFilesParams,
-        DidChangeWatchedFilesRegistrationOptions, DidCloseTextDocumentParams,
-        DidOpenTextDocumentParams, DidSaveTextDocumentParams,
+        CodeActionProviderCapability, CompletionOptions, CompletionParams, CompletionResponse,
+        DiagnosticOptions, DiagnosticServerCapabilities, DidChangeTextDocumentParams,
+        DidChangeWatchedFilesParams, DidChangeWatchedFilesRegistrationOptions,
+        DidCloseTextDocumentParams, DidOpenTextDocumentParams, DidSaveTextDocumentParams,
         DocumentDiagnosticParams, DocumentDiagnosticReport, DocumentDiagnosticReportResult,
-        FileChangeType, FileSystemWatcher, FullDocumentDiagnosticReport, GlobPattern,
-        GotoDefinitionResponse, InitializeParams, InitializeResult, InitializedParams,
-        MessageType, OneOf, PrepareRenameResponse,
-        PositionEncodingKind, ReferenceParams, RenameOptions, RenameParams, Registration,
-        RelatedFullDocumentDiagnosticReport,
-        ServerCapabilities, ServerInfo, SignatureHelpOptions, SignatureHelpParams,
+        ExecuteCommandOptions, ExecuteCommandParams, FileChangeType, FileSystemWatcher,
+        FullDocumentDiagnosticReport, GlobPattern, GotoDefinitionParams, GotoDefinitionResponse,
+        Hover, HoverParams, InitializeParams, InitializeResult, InitializedParams, InlayHint,
+        InlayHintParams, MessageType, OneOf, PositionEncodingKind, PrepareRenameResponse,
+        ReferenceParams, Registration, RelatedFullDocumentDiagnosticReport, RenameOptions,
+        RenameParams, ServerCapabilities, ServerInfo, SignatureHelpOptions, SignatureHelpParams,
         TextDocumentPositionParams, TextDocumentSyncCapability, TextDocumentSyncKind, Uri,
         WorkspaceEdit, WorkspaceSymbolOptions, WorkspaceSymbolParams, WorkspaceSymbolResponse,
-        InlayHint, InlayHintParams,
     },
 };
 
 use crate::{
-    features::{code_action, completion, definition, hover, inlay_hints, references, rename, schema, signature_help, symbols},
+    features::{
+        code_action, completion, definition, hover, inlay_hints, references, rename, schema,
+        signature_help, symbols,
+    },
     pipeline::{run_pass1, run_pass2},
     state::WorkspaceState,
     util::positions::apply_changes,
@@ -143,7 +141,8 @@ impl LanguageServer for Backend {
             .and_then(|w| w.inlay_hint.as_ref())
             .and_then(|h| h.refresh_support)
             .unwrap_or(false);
-        self.supports_inlay_hint_refresh.store(refresh, Ordering::Relaxed);
+        self.supports_inlay_hint_refresh
+            .store(refresh, Ordering::Relaxed);
 
         // Record whether the client supports dynamic file-watcher registration.
         let dyn_reg = params
@@ -153,7 +152,8 @@ impl LanguageServer for Backend {
             .and_then(|w| w.did_change_watched_files.as_ref())
             .and_then(|w| w.dynamic_registration)
             .unwrap_or(false);
-        self.supports_dynamic_registration.store(dyn_reg, Ordering::Relaxed);
+        self.supports_dynamic_registration
+            .store(dyn_reg, Ordering::Relaxed);
 
         // Store the root URI for the background workspace scan started in `initialized`.
         #[allow(deprecated)]
@@ -165,7 +165,11 @@ impl LanguageServer for Backend {
             .or(params.root_uri.clone());
         *self.root_uri.lock().unwrap() = root;
 
-        let pos_enc = if use_utf8 { PositionEncodingKind::UTF8 } else { PositionEncodingKind::UTF16 };
+        let pos_enc = if use_utf8 {
+            PositionEncodingKind::UTF8
+        } else {
+            PositionEncodingKind::UTF16
+        };
 
         Ok(InitializeResult {
             server_info: Some(ServerInfo {
@@ -188,13 +192,22 @@ impl LanguageServer for Backend {
                 inlay_hint_provider: Some(OneOf::Left(true)),
                 code_action_provider: Some(CodeActionProviderCapability::Options(
                     CodeActionOptions {
-                        code_action_kinds: Some(vec![CodeActionKind::QUICKFIX, CodeActionKind::REFACTOR]),
+                        code_action_kinds: Some(vec![
+                            CodeActionKind::QUICKFIX,
+                            CodeActionKind::REFACTOR,
+                        ]),
                         resolve_provider: Some(true),
                         work_done_progress_options: Default::default(),
                     },
                 )),
                 completion_provider: Some(CompletionOptions {
-                    trigger_characters: Some(vec![".".to_string(), "\"".to_string(), "'".to_string(), "(".to_string(), ",".to_string()]),
+                    trigger_characters: Some(vec![
+                        ".".to_string(),
+                        "\"".to_string(),
+                        "'".to_string(),
+                        "(".to_string(),
+                        ",".to_string(),
+                    ]),
                     resolve_provider: Some(false),
                     ..Default::default()
                 }),
@@ -213,14 +226,20 @@ impl LanguageServer for Backend {
                     prepare_provider: Some(true),
                     work_done_progress_options: Default::default(),
                 })),
-                hover_provider: Some(tower_lsp_server::ls_types::HoverProviderCapability::Simple(true)),
+                hover_provider: Some(tower_lsp_server::ls_types::HoverProviderCapability::Simple(
+                    true,
+                )),
                 execute_command_provider: Some(ExecuteCommandOptions {
                     commands: vec!["sqlalchemy.showSchema".to_string()],
                     work_done_progress_options: Default::default(),
                 }),
                 ..ServerCapabilities::default()
             },
-            offset_encoding: if use_utf8 { Some("utf-8".to_string()) } else { None },
+            offset_encoding: if use_utf8 {
+                Some("utf-8".to_string())
+            } else {
+                None
+            },
         })
     }
 
@@ -388,18 +407,36 @@ impl LanguageServer for Backend {
     async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
         let uri = params.text_document_position.text_document.uri;
         let pos = params.text_document_position.position;
-        let source = self.state.file_sources.get(&uri).map(|s| s.clone()).unwrap_or_default();
+        let source = self
+            .state
+            .file_sources
+            .get(&uri)
+            .map(|s| s.clone())
+            .unwrap_or_default();
         let items = completion::provide_completions(&uri, &source, pos, &self.state);
         Ok(items.map(CompletionResponse::Array))
     }
 
     // ── Signature help ────────────────────────────────────────────────────────
 
-    async fn signature_help(&self, params: SignatureHelpParams) -> Result<Option<tower_lsp_server::ls_types::SignatureHelp>> {
+    async fn signature_help(
+        &self,
+        params: SignatureHelpParams,
+    ) -> Result<Option<tower_lsp_server::ls_types::SignatureHelp>> {
         let uri = params.text_document_position_params.text_document.uri;
         let pos = params.text_document_position_params.position;
-        let source = self.state.file_sources.get(&uri).map(|s| s.clone()).unwrap_or_default();
-        Ok(signature_help::provide_signature_help(&uri, &source, pos, &self.state))
+        let source = self
+            .state
+            .file_sources
+            .get(&uri)
+            .map(|s| s.clone())
+            .unwrap_or_default();
+        Ok(signature_help::provide_signature_help(
+            &uri,
+            &source,
+            pos,
+            &self.state,
+        ))
     }
 
     // ── Hover ─────────────────────────────────────────────────────────────────
@@ -412,17 +449,28 @@ impl LanguageServer for Backend {
 
     // ── Go-to-definition ──────────────────────────────────────────────────────
 
-    async fn goto_definition(&self, params: GotoDefinitionParams) -> Result<Option<GotoDefinitionResponse>> {
+    async fn goto_definition(
+        &self,
+        params: GotoDefinitionParams,
+    ) -> Result<Option<GotoDefinitionResponse>> {
         let uri = params.text_document_position_params.text_document.uri;
         let pos = params.text_document_position_params.position;
-        let source = self.state.file_sources.get(&uri).map(|s| s.clone()).unwrap_or_default();
+        let source = self
+            .state
+            .file_sources
+            .get(&uri)
+            .map(|s| s.clone())
+            .unwrap_or_default();
         let loc = definition::resolve_definition(&uri, &source, pos, &self.state);
         Ok(loc.map(GotoDefinitionResponse::Scalar))
     }
 
     // ── Find references ───────────────────────────────────────────────────────
 
-    async fn references(&self, params: ReferenceParams) -> Result<Option<Vec<tower_lsp_server::ls_types::Location>>> {
+    async fn references(
+        &self,
+        params: ReferenceParams,
+    ) -> Result<Option<Vec<tower_lsp_server::ls_types::Location>>> {
         let uri = params.text_document_position.text_document.uri;
         let pos = params.text_document_position.position;
         let include_decl = params.context.include_declaration;
@@ -432,7 +480,10 @@ impl LanguageServer for Backend {
 
     // ── Code actions ──────────────────────────────────────────────────────────
 
-    async fn code_action(&self, params: CodeActionParams) -> Result<Option<Vec<CodeActionOrCommand>>> {
+    async fn code_action(
+        &self,
+        params: CodeActionParams,
+    ) -> Result<Option<Vec<CodeActionOrCommand>>> {
         let actions = code_action::provide_code_actions(&params, &self.state);
         Ok(Some(actions))
     }
@@ -452,7 +503,10 @@ impl LanguageServer for Backend {
 
     // ── Execute command ───────────────────────────────────────────────────────
 
-    async fn execute_command(&self, params: ExecuteCommandParams) -> tower_lsp_server::jsonrpc::Result<Option<tower_lsp_server::ls_types::LSPAny>> {
+    async fn execute_command(
+        &self,
+        params: ExecuteCommandParams,
+    ) -> tower_lsp_server::jsonrpc::Result<Option<tower_lsp_server::ls_types::LSPAny>> {
         if params.command != "sqlalchemy.showSchema" {
             return Ok(None);
         }
@@ -467,14 +521,20 @@ impl LanguageServer for Backend {
 
     // ── Workspace symbols ─────────────────────────────────────────────────────
 
-    async fn symbol(&self, params: WorkspaceSymbolParams) -> Result<Option<WorkspaceSymbolResponse>> {
+    async fn symbol(
+        &self,
+        params: WorkspaceSymbolParams,
+    ) -> Result<Option<WorkspaceSymbolResponse>> {
         let resp = symbols::provide_symbols(&params.query, &self.state);
         Ok(Some(resp))
     }
 
     // ── Rename ────────────────────────────────────────────────────────────────
 
-    async fn prepare_rename(&self, params: TextDocumentPositionParams) -> Result<Option<PrepareRenameResponse>> {
+    async fn prepare_rename(
+        &self,
+        params: TextDocumentPositionParams,
+    ) -> Result<Option<PrepareRenameResponse>> {
         let uri = params.text_document.uri;
         let pos = params.position;
         Ok(rename::prepare_rename(&uri, pos, &self.state))
@@ -483,7 +543,12 @@ impl LanguageServer for Backend {
     async fn rename(&self, params: RenameParams) -> Result<Option<WorkspaceEdit>> {
         let uri = params.text_document_position.text_document.uri;
         let pos = params.text_document_position.position;
-        Ok(rename::compute_rename(&uri, pos, &params.new_name, &self.state))
+        Ok(rename::compute_rename(
+            &uri,
+            pos,
+            &params.new_name,
+            &self.state,
+        ))
     }
 }
 
@@ -504,7 +569,8 @@ async fn scan_workspace(
 
     // Collect .py files matching indicators in a blocking thread.
     let root_owned: PathBuf = root_path.as_ref().to_path_buf();
-    let Ok(py_files) = tokio::task::spawn_blocking(move || crate::pipeline::collect_py_files(&root_owned)).await
+    let Ok(py_files) =
+        tokio::task::spawn_blocking(move || crate::pipeline::collect_py_files(&root_owned)).await
     else {
         return;
     };
@@ -533,4 +599,3 @@ async fn scan_workspace(
     // Bump generation so any in-flight editor Pass 2 knows it's superseded.
     generation.fetch_add(1, Ordering::SeqCst);
 }
-

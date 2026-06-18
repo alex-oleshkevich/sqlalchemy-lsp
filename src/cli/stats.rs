@@ -15,7 +15,11 @@ pub struct StatsArgs {
 
 pub fn run_stats(args: StatsArgs) -> i32 {
     let root = if let Some(p) = args.paths.first() {
-        if p.is_absolute() { p.clone() } else { std::env::current_dir().unwrap_or_default().join(p) }
+        if p.is_absolute() {
+            p.clone()
+        } else {
+            std::env::current_dir().unwrap_or_default().join(p)
+        }
     } else {
         std::env::current_dir().unwrap_or_default()
     };
@@ -25,26 +29,52 @@ pub fn run_stats(args: StatsArgs) -> i32 {
 
     // Gather stats from the index
     let model_count = state.model_index.len();
-    let col_count: usize = state.file_models.iter()
-        .flat_map(|e| e.value().iter().map(|m| m.columns.len()).collect::<Vec<_>>())
-        .sum();
-    let rel_count: usize = state.file_models.iter()
-        .flat_map(|e| e.value().iter().map(|m| m.relationships.len()).collect::<Vec<_>>())
-        .sum();
-    let fk_count: usize = state.file_models.iter()
+    let col_count: usize = state
+        .file_models
+        .iter()
         .flat_map(|e| {
-            e.value().iter()
-                .map(|m| m.columns.values().filter(|c| c.foreign_key.is_some()).count())
+            e.value()
+                .iter()
+                .map(|m| m.columns.len())
+                .collect::<Vec<_>>()
+        })
+        .sum();
+    let rel_count: usize = state
+        .file_models
+        .iter()
+        .flat_map(|e| {
+            e.value()
+                .iter()
+                .map(|m| m.relationships.len())
+                .collect::<Vec<_>>()
+        })
+        .sum();
+    let fk_count: usize = state
+        .file_models
+        .iter()
+        .flat_map(|e| {
+            e.value()
+                .iter()
+                .map(|m| {
+                    m.columns
+                        .values()
+                        .filter(|c| c.foreign_key.is_some())
+                        .count()
+                })
                 .collect::<Vec<_>>()
         })
         .sum();
 
     // Migration heads: revisions not referenced as a down_revision by any other migration
     use crate::alembic::DownRevision;
-    let all_revisions: std::collections::HashSet<String> = state.migration_files.iter()
+    let all_revisions: std::collections::HashSet<String> = state
+        .migration_files
+        .iter()
         .filter_map(|e| e.value().revision.clone())
         .collect();
-    let pointed_to: std::collections::HashSet<String> = state.migration_files.iter()
+    let pointed_to: std::collections::HashSet<String> = state
+        .migration_files
+        .iter()
         .flat_map(|e| match &e.value().down_revision {
             DownRevision::None => vec![],
             DownRevision::Single(s) => vec![s.clone()],
@@ -54,7 +84,8 @@ pub fn run_stats(args: StatsArgs) -> i32 {
     let head_count = all_revisions.difference(&pointed_to).count();
 
     // Finding counts by code
-    let mut code_counts: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+    let mut code_counts: std::collections::BTreeMap<String, usize> =
+        std::collections::BTreeMap::new();
     for entry in state.diagnostics.iter() {
         for diag in entry.value().iter() {
             if let Some(tower_lsp_server::ls_types::NumberOrString::String(code)) = &diag.code {
@@ -65,9 +96,7 @@ pub fn run_stats(args: StatsArgs) -> i32 {
     let total_findings: usize = code_counts.values().sum();
 
     // Model names for summary
-    let mut model_names: Vec<String> = state.model_index.iter()
-        .map(|e| e.key().clone())
-        .collect();
+    let mut model_names: Vec<String> = state.model_index.iter().map(|e| e.key().clone()).collect();
     model_names.sort();
 
     if args.format == "json" {
@@ -84,7 +113,10 @@ pub fn run_stats(args: StatsArgs) -> i32 {
         });
         println!("{}", serde_json::to_string_pretty(&obj).unwrap_or_default());
     } else {
-        println!("Workspace: {}   (checked {files_checked} files)", root.display());
+        println!(
+            "Workspace: {}   (checked {files_checked} files)",
+            root.display()
+        );
         println!();
         let names_str = if model_names.is_empty() {
             "none".to_string()

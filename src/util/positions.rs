@@ -7,7 +7,11 @@ use tower_lsp_server::ls_types::{Position, PositionEncodingKind, Range};
 /// Convert a UTF-8 byte offset into the LSP `Position` (line/character) using
 /// the negotiated encoding. UTF-8 means byte column; UTF-16 means UTF-16
 /// code-unit column (matching what most editors historically expect).
-pub fn offset_to_position(source: &str, byte_offset: usize, encoding: &PositionEncodingKind) -> Position {
+pub fn offset_to_position(
+    source: &str,
+    byte_offset: usize,
+    encoding: &PositionEncodingKind,
+) -> Position {
     let clamped = byte_offset.min(source.len());
     let prefix = &source[..clamped];
     let line = prefix.bytes().filter(|&b| b == b'\n').count() as u32;
@@ -66,7 +70,11 @@ fn character_to_byte(line: &str, character: u32, encoding: &PositionEncodingKind
 
 // ── LSP Range → byte range ────────────────────────────────────────────────────
 
-pub fn range_to_byte_range(source: &str, range: Range, encoding: &PositionEncodingKind) -> (usize, usize) {
+pub fn range_to_byte_range(
+    source: &str,
+    range: Range,
+    encoding: &PositionEncodingKind,
+) -> (usize, usize) {
     let start = position_to_offset(source, range.start, encoding);
     let end = position_to_offset(source, range.end, encoding);
     (start, end.max(start))
@@ -110,10 +118,34 @@ mod tests {
     #[test]
     fn offset_to_pos_ascii() {
         let src = "hello\nworld\n";
-        assert_eq!(offset_to_position(src, 0, &UTF8), Position { line: 0, character: 0 });
-        assert_eq!(offset_to_position(src, 5, &UTF8), Position { line: 0, character: 5 });
-        assert_eq!(offset_to_position(src, 6, &UTF8), Position { line: 1, character: 0 });
-        assert_eq!(offset_to_position(src, 11, &UTF8), Position { line: 1, character: 5 });
+        assert_eq!(
+            offset_to_position(src, 0, &UTF8),
+            Position {
+                line: 0,
+                character: 0
+            }
+        );
+        assert_eq!(
+            offset_to_position(src, 5, &UTF8),
+            Position {
+                line: 0,
+                character: 5
+            }
+        );
+        assert_eq!(
+            offset_to_position(src, 6, &UTF8),
+            Position {
+                line: 1,
+                character: 0
+            }
+        );
+        assert_eq!(
+            offset_to_position(src, 11, &UTF8),
+            Position {
+                line: 1,
+                character: 5
+            }
+        );
     }
 
     #[test]
@@ -123,7 +155,13 @@ mod tests {
         // 'é' at byte 3, 4 (2 bytes each)
         let pos = offset_to_position(src, src.len() - 1 /* before \n */, &UTF16);
         // "caféé" has 5 chars, all 1 UTF-16 unit → character = 5
-        assert_eq!(pos, Position { line: 0, character: 5 });
+        assert_eq!(
+            pos,
+            Position {
+                line: 0,
+                character: 5
+            }
+        );
     }
 
     #[test]
@@ -132,7 +170,13 @@ mod tests {
         let src = "a𝕳b\n";
         // byte 0 = 'a', bytes 1-4 = "𝕳", byte 5 = 'b'
         let pos_b = offset_to_position(src, 5, &UTF16);
-        assert_eq!(pos_b, Position { line: 0, character: 3 }); // a=1 + 𝕳=2 = 3
+        assert_eq!(
+            pos_b,
+            Position {
+                line: 0,
+                character: 3
+            }
+        ); // a=1 + 𝕳=2 = 3
     }
 
     #[test]

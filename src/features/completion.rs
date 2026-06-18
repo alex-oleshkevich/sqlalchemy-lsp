@@ -3,29 +3,38 @@
 /// Fires only inside recognized SA/Alembic call sites (the companion gate, REQ-CMP-15).
 /// Uses tree-sitter to classify the cursor's context and then returns the matching item set.
 use tower_lsp_server::ls_types::{
-    CompletionItem, CompletionItemKind, Documentation, InsertTextFormat, MarkupContent,
-    MarkupKind, Position, Uri,
+    CompletionItem, CompletionItemKind, Documentation, InsertTextFormat, MarkupContent, MarkupKind,
+    Position, Uri,
 };
 
-use crate::{
-    parsing::python::node_text,
-    state::WorkspaceState,
-};
+use crate::{parsing::python::node_text, state::WorkspaceState};
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 /// The relationship kwargs we complete (REQ-CMP-06).
 const REL_KWARGS: &[(&str, &str, &str)] = &[
-    ("back_populates", "back_populates=\"$1\"", "Reverse relationship name"),
+    (
+        "back_populates",
+        "back_populates=\"$1\"",
+        "Reverse relationship name",
+    ),
     ("lazy", "lazy=\"$1\"", "Loading strategy"),
     ("uselist", "uselist=$1", "Whether to return a list"),
     ("secondary", "secondary=$1", "Association table"),
     ("cascade", "cascade=\"$1\"", "Cascade rules"),
     ("order_by", "order_by=$1", "Default sort"),
-    ("foreign_keys", "foreign_keys=[$1]", "Disambiguate FK columns"),
+    (
+        "foreign_keys",
+        "foreign_keys=[$1]",
+        "Disambiguate FK columns",
+    ),
     ("viewonly", "viewonly=$1", "Read-only relationship"),
     ("primaryjoin", "primaryjoin=$1", "Custom join condition"),
-    ("secondaryjoin", "secondaryjoin=$1", "Secondary join condition"),
+    (
+        "secondaryjoin",
+        "secondaryjoin=$1",
+        "Secondary join condition",
+    ),
 ];
 
 const LAZY_VALUES: &[(&str, &str)] = &[
@@ -48,7 +57,10 @@ const CASCADE_TOKENS: &[(&str, &str)] = &[
     ("delete-orphan", "Cascade delete orphans"),
     ("refresh-expire", "Cascade refresh/expire"),
     ("all", "All standard cascades"),
-    ("all, delete-orphan", "All + orphan deletion (common combination)"),
+    (
+        "all, delete-orphan",
+        "All + orphan deletion (common combination)",
+    ),
     ("save-update, merge", "Default subset"),
 ];
 
@@ -59,10 +71,18 @@ const MC_KWARGS: &[(&str, &str, &str)] = &[
     ("unique", "unique=True", "Unique constraint"),
     ("index", "index=True", "Create an index"),
     ("default", "default=$1", "Python-side default"),
-    ("server_default", "server_default=$1", "Database-side default"),
+    (
+        "server_default",
+        "server_default=$1",
+        "Database-side default",
+    ),
     ("name", "name=\"$1\"", "Override column name in DB"),
     ("type_", "type_=$1", "Explicit SA type"),
-    ("ForeignKey", "ForeignKey(\"${1:table.col}\")", "Add a foreign key"),
+    (
+        "ForeignKey",
+        "ForeignKey(\"${1:table.col}\")",
+        "Add a foreign key",
+    ),
 ];
 
 // ── Snippet catalogue (REQ-CMP-14) ────────────────────────────────────────────
@@ -171,34 +191,93 @@ struct OpInfo {
 }
 
 const OP_CATALOGUE: &[OpInfo] = &[
-    OpInfo { name: "add_column", doc: "Add a column to an existing table.", snippet: "add_column(\"${1:table}\", sa.Column(\"${2:name}\", sa.${3:String}))" },
-    OpInfo { name: "drop_column", doc: "Drop a column from a table.", snippet: "drop_column(\"${1:table}\", \"${2:column}\")" },
-    OpInfo { name: "alter_column", doc: "Alter a column's type or constraints.", snippet: "alter_column(\"${1:table}\", \"${2:column}\", nullable=${3:True})" },
-    OpInfo { name: "create_table", doc: "Create a new table.", snippet: "create_table(\n    \"${1:table_name}\",\n    sa.Column(\"id\", sa.Integer, primary_key=True),\n)" },
-    OpInfo { name: "drop_table", doc: "Drop a table.", snippet: "drop_table(\"${1:table}\")" },
-    OpInfo { name: "create_index", doc: "Create a new index.", snippet: "create_index(\"${1:name}\", \"${2:table}\", [\"${3:column}\"])" },
-    OpInfo { name: "drop_index", doc: "Drop an index.", snippet: "drop_index(\"${1:name}\", table_name=\"${2:table}\")" },
-    OpInfo { name: "create_unique_constraint", doc: "Add a unique constraint.", snippet: "create_unique_constraint(\"${1:name}\", \"${2:table}\", [\"${3:column}\"])" },
-    OpInfo { name: "drop_constraint", doc: "Drop a named constraint.", snippet: "drop_constraint(\"${1:name}\", \"${2:table}\", type_=\"${3:unique}\")" },
-    OpInfo { name: "create_foreign_key", doc: "Add a foreign-key constraint.", snippet: "create_foreign_key(\"${1:name}\", \"${2:src}\", \"${3:ref}\", [\"${4:local}\"], [\"${5:remote}\"])" },
-    OpInfo { name: "create_check_constraint", doc: "Add a CHECK constraint.", snippet: "create_check_constraint(\"${1:name}\", \"${2:table}\", ${3:condition})" },
-    OpInfo { name: "rename_table", doc: "Rename a table.", snippet: "rename_table(\"${1:old}\", \"${2:new}\")" },
-    OpInfo { name: "execute", doc: "Execute arbitrary SQL.", snippet: "execute(\"${1:sql}\")" },
-    OpInfo { name: "bulk_insert", doc: "Bulk-insert rows.", snippet: "bulk_insert(${1:table}, [${2:rows}])" },
+    OpInfo {
+        name: "add_column",
+        doc: "Add a column to an existing table.",
+        snippet: "add_column(\"${1:table}\", sa.Column(\"${2:name}\", sa.${3:String}))",
+    },
+    OpInfo {
+        name: "drop_column",
+        doc: "Drop a column from a table.",
+        snippet: "drop_column(\"${1:table}\", \"${2:column}\")",
+    },
+    OpInfo {
+        name: "alter_column",
+        doc: "Alter a column's type or constraints.",
+        snippet: "alter_column(\"${1:table}\", \"${2:column}\", nullable=${3:True})",
+    },
+    OpInfo {
+        name: "create_table",
+        doc: "Create a new table.",
+        snippet: "create_table(\n    \"${1:table_name}\",\n    sa.Column(\"id\", sa.Integer, primary_key=True),\n)",
+    },
+    OpInfo {
+        name: "drop_table",
+        doc: "Drop a table.",
+        snippet: "drop_table(\"${1:table}\")",
+    },
+    OpInfo {
+        name: "create_index",
+        doc: "Create a new index.",
+        snippet: "create_index(\"${1:name}\", \"${2:table}\", [\"${3:column}\"])",
+    },
+    OpInfo {
+        name: "drop_index",
+        doc: "Drop an index.",
+        snippet: "drop_index(\"${1:name}\", table_name=\"${2:table}\")",
+    },
+    OpInfo {
+        name: "create_unique_constraint",
+        doc: "Add a unique constraint.",
+        snippet: "create_unique_constraint(\"${1:name}\", \"${2:table}\", [\"${3:column}\"])",
+    },
+    OpInfo {
+        name: "drop_constraint",
+        doc: "Drop a named constraint.",
+        snippet: "drop_constraint(\"${1:name}\", \"${2:table}\", type_=\"${3:unique}\")",
+    },
+    OpInfo {
+        name: "create_foreign_key",
+        doc: "Add a foreign-key constraint.",
+        snippet: "create_foreign_key(\"${1:name}\", \"${2:src}\", \"${3:ref}\", [\"${4:local}\"], [\"${5:remote}\"])",
+    },
+    OpInfo {
+        name: "create_check_constraint",
+        doc: "Add a CHECK constraint.",
+        snippet: "create_check_constraint(\"${1:name}\", \"${2:table}\", ${3:condition})",
+    },
+    OpInfo {
+        name: "rename_table",
+        doc: "Rename a table.",
+        snippet: "rename_table(\"${1:old}\", \"${2:new}\")",
+    },
+    OpInfo {
+        name: "execute",
+        doc: "Execute arbitrary SQL.",
+        snippet: "execute(\"${1:sql}\")",
+    },
+    OpInfo {
+        name: "bulk_insert",
+        doc: "Bulk-insert rows.",
+        snippet: "bulk_insert(${1:table}, [${2:rows}])",
+    },
 ];
 
 fn op_items() -> Vec<CompletionItem> {
-    OP_CATALOGUE.iter().map(|op| CompletionItem {
-        label: op.name.to_string(),
-        kind: Some(CompletionItemKind::FUNCTION),
-        documentation: Some(Documentation::MarkupContent(MarkupContent {
-            kind: MarkupKind::Markdown,
-            value: op.doc.to_string(),
-        })),
-        insert_text: Some(op.snippet.to_string()),
-        insert_text_format: Some(InsertTextFormat::SNIPPET),
-        ..Default::default()
-    }).collect()
+    OP_CATALOGUE
+        .iter()
+        .map(|op| CompletionItem {
+            label: op.name.to_string(),
+            kind: Some(CompletionItemKind::FUNCTION),
+            documentation: Some(Documentation::MarkupContent(MarkupContent {
+                kind: MarkupKind::Markdown,
+                value: op.doc.to_string(),
+            })),
+            insert_text: Some(op.snippet.to_string()),
+            insert_text_format: Some(InsertTextFormat::SNIPPET),
+            ..Default::default()
+        })
+        .collect()
 }
 
 // ── Item constructors ─────────────────────────────────────────────────────────
@@ -294,9 +373,17 @@ fn extract_mapped_target(source: &str, line: u32) -> Option<String> {
         ('"', s)
     } else if let Some(s) = inner.strip_prefix('\'') {
         ('\'', s)
-    } else if inner.chars().next().map(|c| c.is_alphabetic()).unwrap_or(false) {
+    } else if inner
+        .chars()
+        .next()
+        .map(|c| c.is_alphabetic())
+        .unwrap_or(false)
+    {
         // Bare name: Mapped[User]
-        let name: String = inner.chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect();
+        let name: String = inner
+            .chars()
+            .take_while(|c| c.is_alphanumeric() || *c == '_')
+            .collect();
         return if name.is_empty() { None } else { Some(name) };
     } else {
         return None;
@@ -343,11 +430,7 @@ fn cursor_in_class(leaf: tree_sitter::Node) -> bool {
 }
 
 /// Determine the kwarg position relative to the cursor inside a call's argument list.
-fn kwarg_position(
-    args_node: tree_sitter::Node,
-    pos: Position,
-    _source: &[u8],
-) -> Option<KwargPos> {
+fn kwarg_position(args_node: tree_sitter::Node, pos: Position, _source: &[u8]) -> Option<KwargPos> {
     let cursor_row = pos.line as usize;
     let cursor_col = pos.character as usize;
     let mut c = args_node.walk();
@@ -360,8 +443,7 @@ fn kwarg_position(
         let end = child.end_position();
         let in_range = (cursor_row > start.row
             || (cursor_row == start.row && cursor_col >= start.column))
-            && (cursor_row < end.row
-                || (cursor_row == end.row && cursor_col <= end.column));
+            && (cursor_row < end.row || (cursor_row == end.row && cursor_col <= end.column));
         if !in_range {
             continue;
         }
@@ -369,9 +451,7 @@ fn kwarg_position(
         let name_node = child.child_by_field_name("name")?;
         let eq_end = name_node.end_position();
         // If cursor is after the name node's end we're in the value
-        if cursor_row > eq_end.row
-            || (cursor_row == eq_end.row && cursor_col > eq_end.column)
-        {
+        if cursor_row > eq_end.row || (cursor_row == eq_end.row && cursor_col > eq_end.column) {
             return Some(KwargPos::Value);
         }
         return Some(KwargPos::Key);
@@ -411,9 +491,15 @@ fn positional_arg_index(args_node: tree_sitter::Node, pos: Position, source: &[u
     for ch in text.chars() {
         if !in_str {
             match ch {
-                '(' | '[' | '{' => { depth += 1; past_open = true; }
+                '(' | '[' | '{' => {
+                    depth += 1;
+                    past_open = true;
+                }
                 ')' | ']' | '}' => depth -= 1,
-                '"' | '\'' if depth >= 1 => { in_str = true; quote_ch = ch; }
+                '"' | '\'' if depth >= 1 => {
+                    in_str = true;
+                    quote_ch = ch;
+                }
                 ',' if depth == 1 && past_open => commas += 1,
                 _ => {}
             }
@@ -476,7 +562,11 @@ fn complete_cascade_values(text_in_string: &str) -> Option<Vec<CompletionItem>> 
     if items.is_empty() { None } else { Some(items) }
 }
 
-fn complete_back_populates(target_model: &str, prefix: &str, state: &WorkspaceState) -> Option<Vec<CompletionItem>> {
+fn complete_back_populates(
+    target_model: &str,
+    prefix: &str,
+    state: &WorkspaceState,
+) -> Option<Vec<CompletionItem>> {
     let loc = state.model_index.get(target_model)?;
     let uri = loc.uri.clone();
     drop(loc);
@@ -547,7 +637,11 @@ fn complete_table_arg_columns(
     if items.is_empty() { None } else { Some(items) }
 }
 
-fn complete_model_constructor(model_name: &str, prefix: &str, state: &WorkspaceState) -> Option<Vec<CompletionItem>> {
+fn complete_model_constructor(
+    model_name: &str,
+    prefix: &str,
+    state: &WorkspaceState,
+) -> Option<Vec<CompletionItem>> {
     let loc = state.model_index.get(model_name)?;
     let uri = loc.uri.clone();
     drop(loc);
@@ -565,7 +659,9 @@ fn complete_model_constructor(model_name: &str, prefix: &str, state: &WorkspaceS
         })
         .collect();
     items.extend(
-        model.relationships.iter()
+        model
+            .relationships
+            .iter()
             .filter(|(k, _)| k.starts_with(prefix))
             .map(|(k, rel)| {
                 let detail = if rel.is_list {
@@ -576,7 +672,7 @@ fn complete_model_constructor(model_name: &str, prefix: &str, state: &WorkspaceS
                 let mut item = kwarg_item(k, &format!("{k}=$1"), &detail);
                 item.sort_text = Some(format!("1{k}"));
                 item
-            })
+            }),
     );
     if items.is_empty() { None } else { Some(items) }
 }
@@ -634,7 +730,9 @@ fn complete_op_table_or_column(
         let uri = loc.uri.clone();
         drop(loc);
         let file_models = state.file_models.get(&uri)?;
-        let model = file_models.iter().find(|m| m.table_name.as_deref() == Some(&table))?;
+        let model = file_models
+            .iter()
+            .find(|m| m.table_name.as_deref() == Some(&table))?;
         let items: Vec<CompletionItem> = model
             .columns
             .keys()
@@ -657,8 +755,12 @@ fn complete_snippets(prefix: &str, in_class: bool) -> Option<Vec<CompletionItem>
     let items: Vec<CompletionItem> = SNIPPETS
         .iter()
         .filter(|s| {
-            if s.root_only && in_class { return false; }
-            if s.class_only && !in_class { return false; }
+            if s.root_only && in_class {
+                return false;
+            }
+            if s.class_only && !in_class {
+                return false;
+            }
             s.prefix.starts_with(prefix) || s.label.starts_with(prefix)
         })
         .map(|s| snippet_item(s.label, s.body))
@@ -703,7 +805,9 @@ fn is_in_open_string(prefix: &str) -> bool {
     let mut quote_ch = ' ';
     for ch in prefix.chars() {
         if in_string {
-            if ch == quote_ch { in_string = false; }
+            if ch == quote_ch {
+                in_string = false;
+            }
         } else if ch == '"' || ch == '\'' {
             in_string = true;
             quote_ch = ch;
@@ -725,12 +829,17 @@ fn innermost_call_name(prefix: &str) -> Option<String> {
     while i < n {
         let ch = chars[i];
         if in_string {
-            if ch == quote_ch { in_string = false; }
+            if ch == quote_ch {
+                in_string = false;
+            }
             i += 1;
             continue;
         }
         match ch {
-            '"' | '\'' => { in_string = true; quote_ch = ch; }
+            '"' | '\'' => {
+                in_string = true;
+                quote_ch = ch;
+            }
             '(' => {
                 // Extract identifier (possibly dotted) immediately before this '('
                 let func_end = i;
@@ -748,7 +857,9 @@ fn innermost_call_name(prefix: &str) -> Option<String> {
                     .to_string();
                 call_stack.push(base);
             }
-            ')' => { call_stack.pop(); }
+            ')' => {
+                call_stack.pop();
+            }
             _ => {}
         }
         i += 1;
@@ -758,14 +869,19 @@ fn innermost_call_name(prefix: &str) -> Option<String> {
 
 /// If the cursor is inside a string that is the value of `key="…`, return the key name.
 fn kwarg_key_for_string_value(prefix: &str) -> Option<String> {
-    if !is_in_open_string(prefix) { return None; }
+    if !is_in_open_string(prefix) {
+        return None;
+    }
     // Find position of the last unclosed opening quote.
     let mut in_string = false;
     let mut quote_ch = ' ';
     let mut open_pos: Option<usize> = None;
     for (i, ch) in prefix.char_indices() {
         if in_string {
-            if ch == quote_ch { in_string = false; open_pos = None; }
+            if ch == quote_ch {
+                in_string = false;
+                open_pos = None;
+            }
         } else if ch == '"' || ch == '\'' {
             in_string = true;
             quote_ch = ch;
@@ -815,9 +931,10 @@ pub fn provide_completions(
         Some("relationship") => {
             if in_open_str {
                 match kwarg_key_for_string_value(&prefix).as_deref() {
-                    Some("lazy") => return complete_lazy_values(&str_pfx),      // REQ-CMP-07
+                    Some("lazy") => return complete_lazy_values(&str_pfx), // REQ-CMP-07
                     Some("cascade") => return complete_cascade_values(&str_pfx), // REQ-CMP-08
-                    Some("back_populates") => {                                  // REQ-CMP-09
+                    Some("back_populates") => {
+                        // REQ-CMP-09
                         let target = extract_mapped_target(source, pos.line)?;
                         return complete_back_populates(&target, &str_pfx, state);
                     }
@@ -839,8 +956,13 @@ pub fn provide_completions(
     let source_bytes = source.as_bytes();
     let tree_ref = state.parse_trees.get(uri)?;
     let root = tree_ref.root_node();
-    let cursor_pt = tree_sitter::Point { row: pos.line as usize, column: pos.character as usize };
-    let leaf = root.descendant_for_point_range(cursor_pt, cursor_pt).unwrap_or(root);
+    let cursor_pt = tree_sitter::Point {
+        row: pos.line as usize,
+        column: pos.character as usize,
+    };
+    let leaf = root
+        .descendant_for_point_range(cursor_pt, cursor_pt)
+        .unwrap_or(root);
 
     let Some(call_node) = find_enclosing_call(leaf) else {
         // REQ-CMP-14: snippets at a non-call position
@@ -854,13 +976,22 @@ pub fn provide_completions(
         ft.rsplit('.').next().unwrap_or(ft).to_string()
     };
     let args_node = call_node.child_by_field_name("arguments");
-    let arg_idx = args_node.map(|a| positional_arg_index(a, pos, source_bytes)).unwrap_or(0);
-    let in_string_ts = matches!(leaf.kind(), "string" | "string_content" | "string_end" | "string_start");
+    let arg_idx = args_node
+        .map(|a| positional_arg_index(a, pos, source_bytes))
+        .unwrap_or(0);
+    let in_string_ts = matches!(
+        leaf.kind(),
+        "string" | "string_content" | "string_end" | "string_start"
+    );
 
     match base_name.as_str() {
         // REQ-CMP-12: __table_args__ constraint column strings
         "Index" | "UniqueConstraint" | "PrimaryKeyConstraint" if in_string_ts => {
-            let name_arg_count = if base_name != "PrimaryKeyConstraint" { 1 } else { 0 };
+            let name_arg_count = if base_name != "PrimaryKeyConstraint" {
+                1
+            } else {
+                0
+            };
             if arg_idx > name_arg_count {
                 return complete_table_arg_columns(pos.line, &str_pfx, leaf, source_bytes, state);
             }
@@ -868,7 +999,14 @@ pub fn provide_completions(
 
         // REQ-CMP-04: op.xxx args → table/column
         op_name if state.migration_files.contains_key(uri) && in_string_ts => {
-            return complete_op_table_or_column(op_name, arg_idx, &str_pfx, state, call_node, source_bytes);
+            return complete_op_table_or_column(
+                op_name,
+                arg_idx,
+                &str_pfx,
+                state,
+                call_node,
+                source_bytes,
+            );
         }
 
         // REQ-CMP-13: Model constructor → column/relationship keywords
@@ -895,31 +1033,49 @@ mod tests {
     use std::collections::HashMap;
     use tower_lsp_server::ls_types::Uri;
 
-    fn uri(s: &str) -> Uri { s.parse().unwrap() }
-    fn def_range() -> Range { Range::default() }
+    fn uri(s: &str) -> Uri {
+        s.parse().unwrap()
+    }
+    fn def_range() -> Range {
+        Range::default()
+    }
 
     fn parse_and_store(src: &str, u: &Uri, state: &WorkspaceState) {
         let mut parser = tree_sitter::Parser::new();
-        parser.set_language(&tree_sitter_python::LANGUAGE.into()).unwrap();
+        parser
+            .set_language(&tree_sitter_python::LANGUAGE.into())
+            .unwrap();
         let tree = parser.parse(src, None).unwrap();
         state.parse_trees.insert(u.clone(), tree);
         state.file_sources.insert(u.clone(), src.to_string());
     }
 
-    fn make_model_with_cols(state: &WorkspaceState, u: &Uri, name: &str, table: &str, cols: &[&str]) {
+    fn make_model_with_cols(
+        state: &WorkspaceState,
+        u: &Uri,
+        name: &str,
+        table: &str,
+        cols: &[&str],
+    ) {
         use crate::model::types::{Column, Model};
-        let columns: HashMap<String, Column> = cols.iter().map(|c| {
-            (c.to_string(), Column {
-                name: c.to_string(),
-                key: None,
-                mapped_type: MappedType::Str,
-                args: ColumnArgs::default(),
-                foreign_key: None,
-                doc: None,
-                name_range: def_range(),
-                full_range: def_range(),
+        let columns: HashMap<String, Column> = cols
+            .iter()
+            .map(|c| {
+                (
+                    c.to_string(),
+                    Column {
+                        name: c.to_string(),
+                        key: None,
+                        mapped_type: MappedType::Str,
+                        args: ColumnArgs::default(),
+                        foreign_key: None,
+                        doc: None,
+                        name_range: def_range(),
+                        full_range: def_range(),
+                    },
+                )
             })
-        }).collect();
+            .collect();
         let model = Model {
             name: name.to_string(),
             table_name: Some(table.to_string()),
@@ -945,15 +1101,21 @@ mod tests {
         parse_and_store(src, &u, &state);
         // Mark as migration file
         use crate::alembic::{DownRevision, MigrationFile};
-        state.migration_files.insert(u.clone(), MigrationFile {
-            revision: Some("a1".to_string()),
-            down_revision: DownRevision::None,
-            message: None,
-            revision_range: None,
-            down_revision_range: None,
-            op_calls: vec![],
-        });
-        let pos = Position { line: 3, character: 7 }; // after "op."
+        state.migration_files.insert(
+            u.clone(),
+            MigrationFile {
+                revision: Some("a1".to_string()),
+                down_revision: DownRevision::None,
+                message: None,
+                revision_range: None,
+                down_revision_range: None,
+                op_calls: vec![],
+            },
+        );
+        let pos = Position {
+            line: 3,
+            character: 7,
+        }; // after "op."
         let items = provide_completions(&u, src, pos, &state).unwrap();
         assert!(items.iter().any(|i| i.label == "add_column"), "{items:?}");
         assert!(items.iter().any(|i| i.label == "create_table"), "{items:?}");
@@ -966,7 +1128,10 @@ mod tests {
         let src = "op.";
         parse_and_store(src, &u, &state);
         // No migration file registered
-        let pos = Position { line: 0, character: 3 };
+        let pos = Position {
+            line: 0,
+            character: 3,
+        };
         assert!(provide_completions(&u, src, pos, &state).is_none());
     }
 
@@ -979,12 +1144,19 @@ mod tests {
         make_model_with_cols(&state, &model_u, "User", "users", &["id", "email"]);
 
         let u = uri("file:///post.py");
-        let src = "from sqlalchemy import ForeignKey\nauthor_id = mapped_column(ForeignKey(\"us\"))";
+        let src =
+            "from sqlalchemy import ForeignKey\nauthor_id = mapped_column(ForeignKey(\"us\"))";
         parse_and_store(src, &u, &state);
-        let pos = Position { line: 1, character: 39 }; // inside "us" (on the 's')
+        let pos = Position {
+            line: 1,
+            character: 39,
+        }; // inside "us" (on the 's')
         let items = provide_completions(&u, src, pos, &state);
         let items = items.unwrap_or_default();
-        assert!(items.iter().any(|i| i.label.starts_with("users.")), "expected users.* items, got {items:?}");
+        assert!(
+            items.iter().any(|i| i.label.starts_with("users.")),
+            "expected users.* items, got {items:?}"
+        );
     }
 
     // ── REQ-CMP-06: relationship kwargs ──────────────────────────────────────
@@ -995,9 +1167,15 @@ mod tests {
         let u = uri("file:///post.py");
         let src = "from sqlalchemy.orm import relationship\nauthor = relationship(";
         parse_and_store(src, &u, &state);
-        let pos = Position { line: 1, character: src.lines().nth(1).unwrap().len() as u32 };
+        let pos = Position {
+            line: 1,
+            character: src.lines().nth(1).unwrap().len() as u32,
+        };
         let items = provide_completions(&u, src, pos, &state).unwrap_or_default();
-        assert!(items.iter().any(|i| i.label == "back_populates"), "{items:?}");
+        assert!(
+            items.iter().any(|i| i.label == "back_populates"),
+            "{items:?}"
+        );
         assert!(items.iter().any(|i| i.label == "lazy"), "{items:?}");
     }
 
@@ -1009,7 +1187,10 @@ mod tests {
         let u = uri("file:///post.py");
         let src = "from sqlalchemy.orm import relationship\nauthor = relationship(lazy=\"";
         parse_and_store(src, &u, &state);
-        let pos = Position { line: 1, character: src.lines().nth(1).unwrap().len() as u32 };
+        let pos = Position {
+            line: 1,
+            character: src.lines().nth(1).unwrap().len() as u32,
+        };
         let items = provide_completions(&u, src, pos, &state).unwrap_or_default();
         assert!(items.iter().any(|i| i.label == "joined"), "{items:?}");
         assert!(items.iter().any(|i| i.label == "selectin"), "{items:?}");
@@ -1023,10 +1204,19 @@ mod tests {
         let u = uri("file:///post.py");
         let src = "from sqlalchemy.orm import relationship\nauthor = relationship(cascade=\"";
         parse_and_store(src, &u, &state);
-        let pos = Position { line: 1, character: src.lines().nth(1).unwrap().len() as u32 };
+        let pos = Position {
+            line: 1,
+            character: src.lines().nth(1).unwrap().len() as u32,
+        };
         let items = provide_completions(&u, src, pos, &state).unwrap_or_default();
-        assert!(items.iter().any(|i| i.label == "all, delete-orphan"), "{items:?}");
-        assert!(items.iter().any(|i| i.label == "delete-orphan"), "{items:?}");
+        assert!(
+            items.iter().any(|i| i.label == "all, delete-orphan"),
+            "{items:?}"
+        );
+        assert!(
+            items.iter().any(|i| i.label == "delete-orphan"),
+            "{items:?}"
+        );
     }
 
     // ── REQ-CMP-11: mapped_column kwargs ──────────────────────────────────────
@@ -1037,7 +1227,10 @@ mod tests {
         let u = uri("file:///post.py");
         let src = "from sqlalchemy.orm import mapped_column\nid = mapped_column(";
         parse_and_store(src, &u, &state);
-        let pos = Position { line: 1, character: src.lines().nth(1).unwrap().len() as u32 };
+        let pos = Position {
+            line: 1,
+            character: src.lines().nth(1).unwrap().len() as u32,
+        };
         let items = provide_completions(&u, src, pos, &state).unwrap_or_default();
         assert!(items.iter().any(|i| i.label == "primary_key"), "{items:?}");
         assert!(items.iter().any(|i| i.label == "nullable"), "{items:?}");
@@ -1051,7 +1244,10 @@ mod tests {
         let u = uri("file:///new_model.py");
         let src = "samodel";
         parse_and_store(src, &u, &state);
-        let pos = Position { line: 0, character: 7 };
+        let pos = Position {
+            line: 0,
+            character: 7,
+        };
         let items = provide_completions(&u, src, pos, &state).unwrap_or_default();
         assert!(items.iter().any(|i| i.label == "samodel"), "{items:?}");
     }
@@ -1065,7 +1261,10 @@ mod tests {
         let src = "def slugify(title):\n    return title.lower()";
         parse_and_store(src, &u, &state);
         // Cursor after "title." — no SA context
-        let pos = Position { line: 1, character: 18 }; // after "title."
+        let pos = Position {
+            line: 1,
+            character: 18,
+        }; // after "title."
         // This line ends with "title.lower()" and cursor is inside lower() call
         // but "lower" is not an SA call, so should return None
         assert!(provide_completions(&u, src, pos, &state).is_none());

@@ -1,10 +1,13 @@
-use std::{path::{Path, PathBuf}, sync::Arc};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use tokio::task;
 use tower_lsp_server::{Client, ls_types::Uri};
 
 use crate::{
-    alembic::{extractor::extract_migration, MigrationFile},
+    alembic::{MigrationFile, extractor::extract_migration},
     features::{alembic_diag, f01, f02},
     model::types::Model,
     parsing::{
@@ -29,12 +32,18 @@ pub fn build_workspace_index(root: &Path) -> Arc<WorkspaceState> {
         .expect("load python grammar");
 
     for path in &py_files {
-        let Ok(source) = std::fs::read_to_string(path) else { continue };
+        let Ok(source) = std::fs::read_to_string(path) else {
+            continue;
+        };
         if !has_sqlalchemy_indicators(&source) && !has_alembic_indicators(&source) {
             continue;
         }
-        let Some(uri) = Uri::from_file_path(path) else { continue };
-        let Some(tree) = parser.parse(&source, None) else { continue };
+        let Some(uri) = Uri::from_file_path(path) else {
+            continue;
+        };
+        let Some(tree) = parser.parse(&source, None) else {
+            continue;
+        };
 
         let models = if has_sqlalchemy_indicators(&source) {
             extract_models(&source, &tree)
@@ -66,11 +75,19 @@ pub fn build_workspace_index(root: &Path) -> Arc<WorkspaceState> {
     }
 
     let heads = alembic_diag::compute_head_set(&state);
-    let migration_uris: Vec<Uri> = state.migration_files.iter().map(|e| e.key().clone()).collect();
+    let migration_uris: Vec<Uri> = state
+        .migration_files
+        .iter()
+        .map(|e| e.key().clone())
+        .collect();
     for uri in &migration_uris {
         if let Some(mf) = state.migration_files.get(uri) {
             let alembic_diags = alembic_diag::check_migration(&mf, &state, &heads);
-            let mut diags = state.diagnostics.get(uri).map(|d| d.clone()).unwrap_or_default();
+            let mut diags = state
+                .diagnostics
+                .get(uri)
+                .map(|d| d.clone())
+                .unwrap_or_default();
             diags.extend(alembic_diags);
             state.diagnostics.insert(uri.clone(), diags);
         }
@@ -116,25 +133,29 @@ pub fn collect_py_files(root: &Path) -> Vec<PathBuf> {
 pub async fn run_pass1(uri: Uri, source: String, state: &Arc<WorkspaceState>, client: &Client) {
     let src = source;
 
-    let result = task::spawn_blocking(move || -> Option<(tree_sitter::Tree, Vec<Model>, Option<MigrationFile>)> {
-        let mut parser = tree_sitter::Parser::new();
-        parser.set_language(&tree_sitter_python::LANGUAGE.into()).ok()?;
-        let tree = parser.parse(src.as_str(), None)?;
+    let result = task::spawn_blocking(
+        move || -> Option<(tree_sitter::Tree, Vec<Model>, Option<MigrationFile>)> {
+            let mut parser = tree_sitter::Parser::new();
+            parser
+                .set_language(&tree_sitter_python::LANGUAGE.into())
+                .ok()?;
+            let tree = parser.parse(src.as_str(), None)?;
 
-        let models = if has_sqlalchemy_indicators(&src) {
-            extract_models(&src, &tree)
-        } else {
-            vec![]
-        };
+            let models = if has_sqlalchemy_indicators(&src) {
+                extract_models(&src, &tree)
+            } else {
+                vec![]
+            };
 
-        let migration = if has_alembic_indicators(&src) {
-            extract_migration(&src, &tree)
-        } else {
-            None
-        };
+            let migration = if has_alembic_indicators(&src) {
+                extract_migration(&src, &tree)
+            } else {
+                None
+            };
 
-        Some((tree, models, migration))
-    })
+            Some((tree, models, migration))
+        },
+    )
     .await;
 
     match result {
@@ -145,7 +166,11 @@ pub async fn run_pass1(uri: Uri, source: String, state: &Arc<WorkspaceState>, cl
                 state.update_migration(&uri, mf);
             }
             // Publish the last Pass 2 results for this URI; Pass 2 will recompute shortly.
-            let diags = state.diagnostics.get(&uri).map(|d| d.clone()).unwrap_or_default();
+            let diags = state
+                .diagnostics
+                .get(&uri)
+                .map(|d| d.clone())
+                .unwrap_or_default();
             client.publish_diagnostics(uri, diags, None).await;
         }
         Ok(None) | Err(_) => {
@@ -162,7 +187,11 @@ pub async fn run_pass1(uri: Uri, source: String, state: &Arc<WorkspaceState>, cl
 ///
 /// Called by the debounce task spawned in `schedule_relink`.  The caller has
 /// already verified that the workspace generation matches before calling here.
-pub async fn run_pass2(state: &Arc<WorkspaceState>, client: &Client, supports_inlay_hint_refresh: bool) {
+pub async fn run_pass2(
+    state: &Arc<WorkspaceState>,
+    client: &Client,
+    supports_inlay_hint_refresh: bool,
+) {
     // Run F01 diagnostics for every indexed SA model file, store results, then publish.
     let model_uris: Vec<Uri> = state.file_models.iter().map(|e| e.key().clone()).collect();
     for uri in &model_uris {
@@ -179,8 +208,11 @@ pub async fn run_pass2(state: &Arc<WorkspaceState>, client: &Client, supports_in
 
     // Run Alembic diagnostics for every migration file, then publish.
     let heads = alembic_diag::compute_head_set(state);
-    let migration_uris: Vec<Uri> =
-        state.migration_files.iter().map(|e| e.key().clone()).collect();
+    let migration_uris: Vec<Uri> = state
+        .migration_files
+        .iter()
+        .map(|e| e.key().clone())
+        .collect();
     for uri in &migration_uris {
         let alembic_diags = if let Some(mf) = state.migration_files.get(uri) {
             alembic_diag::check_migration(&mf, state, &heads)
@@ -188,7 +220,11 @@ pub async fn run_pass2(state: &Arc<WorkspaceState>, client: &Client, supports_in
             vec![]
         };
         // Merge with any SA model diagnostics already computed for this URI.
-        let mut diags = state.diagnostics.get(uri).map(|d| d.clone()).unwrap_or_default();
+        let mut diags = state
+            .diagnostics
+            .get(uri)
+            .map(|d| d.clone())
+            .unwrap_or_default();
         diags.extend(alembic_diags);
         state.diagnostics.insert(uri.clone(), diags.clone());
         // Only publish if not already published by the SA model loop above.

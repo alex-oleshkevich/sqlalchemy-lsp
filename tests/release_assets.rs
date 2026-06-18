@@ -5,16 +5,21 @@ fn repo_root() -> PathBuf {
 }
 
 fn read(rel: &str) -> String {
-    std::fs::read_to_string(repo_root().join(rel))
-        .unwrap_or_else(|e| panic!("read {rel}: {e}"))
+    std::fs::read_to_string(repo_root().join(rel)).unwrap_or_else(|e| panic!("read {rel}: {e}"))
 }
 
 /// REQ-REL-05: version-check job compares tag to Cargo.toml via cargo metadata.
 #[test]
 fn release_yml_has_version_check_job() {
     let content = read(".github/workflows/release.yml");
-    assert!(content.contains("version-check"), "version-check job must exist");
-    assert!(content.contains("cargo metadata"), "version-check must use cargo metadata");
+    assert!(
+        content.contains("version-check"),
+        "version-check job must exist"
+    );
+    assert!(
+        content.contains("cargo metadata"),
+        "version-check must use cargo metadata"
+    );
     assert!(
         content.contains("packages[0].version") || content.contains(".version"),
         "version-check must extract crate version"
@@ -32,7 +37,10 @@ fn release_yml_has_all_five_targets() {
         "aarch64-apple-darwin",
         "x86_64-pc-windows-msvc",
     ] {
-        assert!(content.contains(target), "release.yml must include target {target}");
+        assert!(
+            content.contains(target),
+            "release.yml must include target {target}"
+        );
     }
 }
 
@@ -40,15 +48,24 @@ fn release_yml_has_all_five_targets() {
 #[test]
 fn release_yml_uses_cross_for_aarch64_linux() {
     let content = read(".github/workflows/release.yml");
-    assert!(content.contains("cross: true"), "aarch64-linux must be flagged for cross");
-    assert!(content.contains("cross build"), "cross build command must be present");
+    assert!(
+        content.contains("cross: true"),
+        "aarch64-linux must be flagged for cross"
+    );
+    assert!(
+        content.contains("cross build"),
+        "cross build command must be present"
+    );
 }
 
 /// REQ-REL-06: non-Windows binaries are stripped before upload.
 #[test]
 fn release_yml_strips_binaries() {
     let content = read(".github/workflows/release.yml");
-    assert!(content.contains("strip "), "release.yml must strip non-Windows binaries");
+    assert!(
+        content.contains("strip "),
+        "release.yml must strip non-Windows binaries"
+    );
 }
 
 /// REQ-REL-07: release job packages the Zed extension.
@@ -65,17 +82,32 @@ fn release_yml_packages_zed_extension() {
 #[test]
 fn release_yml_has_publish_aur_job() {
     let content = read(".github/workflows/release.yml");
-    assert!(content.contains("publish-aur"), "publish-aur job must exist");
-    assert!(content.contains("aur.archlinux.org"), "publish-aur must push to aur.archlinux.org");
-    assert!(content.contains("AUR_SSH_KEY"), "publish-aur must be gated on AUR_SSH_KEY");
+    assert!(
+        content.contains("publish-aur"),
+        "publish-aur job must exist"
+    );
+    assert!(
+        content.contains("aur.archlinux.org"),
+        "publish-aur must push to aur.archlinux.org"
+    );
+    assert!(
+        content.contains("AUR_SSH_KEY"),
+        "publish-aur must be gated on AUR_SSH_KEY"
+    );
 }
 
 /// REQ-REL-09: publish-homebrew job with bump-formula-pr and token guard.
 #[test]
 fn release_yml_has_publish_homebrew_job() {
     let content = read(".github/workflows/release.yml");
-    assert!(content.contains("publish-homebrew"), "publish-homebrew job must exist");
-    assert!(content.contains("bump-formula-pr"), "publish-homebrew must use brew bump-formula-pr");
+    assert!(
+        content.contains("publish-homebrew"),
+        "publish-homebrew job must exist"
+    );
+    assert!(
+        content.contains("bump-formula-pr"),
+        "publish-homebrew must use brew bump-formula-pr"
+    );
     assert!(
         content.contains("HOMEBREW_GITHUB_TOKEN"),
         "publish-homebrew must be gated on HOMEBREW_GITHUB_TOKEN"
@@ -112,7 +144,11 @@ fn release_yml_no_github_context_in_run_scripts() {
 
         if in_run_block {
             // A less-indented or same-indented key ends the run block.
-            if !trimmed.is_empty() && indent <= run_indent && trimmed.contains(':') && !trimmed.starts_with('-') {
+            if !trimmed.is_empty()
+                && indent <= run_indent
+                && trimmed.contains(':')
+                && !trimmed.starts_with('-')
+            {
                 in_run_block = false;
             } else if trimmed.contains("${{ github.") {
                 bad_lines.push(line.to_string());
@@ -132,7 +168,10 @@ fn release_yml_no_github_context_in_run_scripts() {
 #[test]
 fn package_script_produces_zip_with_license() {
     let content = read("scripts/package-zed-extension.sh");
-    assert!(content.contains(".zip"), "package script must produce a .zip artifact");
+    assert!(
+        content.contains(".zip"),
+        "package script must produce a .zip artifact"
+    );
     assert!(
         content.contains("cp LICENSE") || content.contains("copy LICENSE"),
         "package script must copy LICENSE into the extension directory"
@@ -143,7 +182,10 @@ fn package_script_produces_zip_with_license() {
 #[test]
 fn aur_pkgbuild_template_exists() {
     let content = read("pkg/aur/PKGBUILD");
-    assert!(content.contains("pkgname=sqlalchemy-lsp"), "PKGBUILD must set pkgname");
+    assert!(
+        content.contains("pkgname=sqlalchemy-lsp"),
+        "PKGBUILD must set pkgname"
+    );
     assert!(content.contains("x86_64"), "PKGBUILD must support x86_64");
     assert!(content.contains("aarch64"), "PKGBUILD must support aarch64");
     assert!(
@@ -156,8 +198,14 @@ fn aur_pkgbuild_template_exists() {
 #[test]
 fn aur_srcinfo_template_exists_without_makepkg() {
     let content = read("pkg/aur/.SRCINFO");
-    assert!(content.contains("pkgbase = sqlalchemy-lsp"), ".SRCINFO must define pkgbase");
-    assert!(content.contains("pkgname = sqlalchemy-lsp"), ".SRCINFO must define pkgname");
+    assert!(
+        content.contains("pkgbase = sqlalchemy-lsp"),
+        ".SRCINFO must define pkgbase"
+    );
+    assert!(
+        content.contains("pkgname = sqlalchemy-lsp"),
+        ".SRCINFO must define pkgname"
+    );
     // makepkg --printsrcinfo never emits a "%PACKAGE%" marker; its presence means the
     // template is malformed and the AUR will reject it.
     assert!(
@@ -166,8 +214,17 @@ fn aur_srcinfo_template_exists_without_makepkg() {
     );
     // The publish-aur job rewrites these exact lines with sed; they must exist verbatim
     // in the template or the sed no-ops and the AUR push ships stale metadata.
-    for line in &["pkgver = ", "source_x86_64 = ", "source_aarch64 = ", "sha256sums_x86_64 = ", "sha256sums_aarch64 = "] {
-        assert!(content.contains(line), ".SRCINFO must contain a `{line}` line for the release sed to update");
+    for line in &[
+        "pkgver = ",
+        "source_x86_64 = ",
+        "source_aarch64 = ",
+        "sha256sums_x86_64 = ",
+        "sha256sums_aarch64 = ",
+    ] {
+        assert!(
+            content.contains(line),
+            ".SRCINFO must contain a `{line}` line for the release sed to update"
+        );
     }
 
     let release_yml = read(".github/workflows/release.yml");

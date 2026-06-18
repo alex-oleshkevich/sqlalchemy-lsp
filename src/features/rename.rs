@@ -10,13 +10,20 @@ use crate::{model::types::Model, state::WorkspaceState};
 
 fn lsp_range(r: crate::model::types::Range) -> Range {
     Range {
-        start: Position { line: r.start_line, character: r.start_col },
-        end: Position { line: r.end_line, character: r.end_col },
+        start: Position {
+            line: r.start_line,
+            character: r.start_col,
+        },
+        end: Position {
+            line: r.end_line,
+            character: r.end_col,
+        },
     }
 }
 
 fn pos_in(pos: Position, r: crate::model::types::Range) -> bool {
-    let after = pos.line > r.start_line || (pos.line == r.start_line && pos.character >= r.start_col);
+    let after =
+        pos.line > r.start_line || (pos.line == r.start_line && pos.character >= r.start_col);
     let before = pos.line < r.end_line || (pos.line == r.end_line && pos.character < r.end_col);
     after && before
 }
@@ -27,7 +34,15 @@ fn quote_char_at(source: &str, line: u32, col: u32) -> char {
         .lines()
         .nth(line as usize)
         .and_then(|l| l.as_bytes().get(col as usize))
-        .and_then(|&b| if b == b'\'' { Some('\'') } else if b == b'"' { Some('"') } else { None })
+        .and_then(|&b| {
+            if b == b'\'' {
+                Some('\'')
+            } else if b == b'"' {
+                Some('"')
+            } else {
+                None
+            }
+        })
         .unwrap_or('"')
 }
 
@@ -78,7 +93,11 @@ fn dispatch<'a>(file_models: &'a [Model], pos: Position) -> Option<Cursor<'a>> {
 
 // ── prepareRename ──────────────────────────────────────────────────────────────
 
-pub fn prepare_rename(uri: &Uri, pos: Position, state: &WorkspaceState) -> Option<PrepareRenameResponse> {
+pub fn prepare_rename(
+    uri: &Uri,
+    pos: Position,
+    state: &WorkspaceState,
+) -> Option<PrepareRenameResponse> {
     let file_models = state.file_models.get(uri)?;
     match dispatch(&file_models, pos)? {
         Cursor::Model(m) => Some(PrepareRenameResponse::RangeWithPlaceholder {
@@ -113,8 +132,14 @@ pub fn compute_rename(
     let file_models = state.file_models.get(uri)?.clone();
     let mut changes: HashMap<Uri, Vec<TextEdit>> = HashMap::new();
 
-    let edit = |changes: &mut HashMap<Uri, Vec<TextEdit>>, file_uri: Uri, r: crate::model::types::Range, new_text: String| {
-        changes.entry(file_uri).or_default().push(TextEdit { range: lsp_range(r), new_text });
+    let edit = |changes: &mut HashMap<Uri, Vec<TextEdit>>,
+                file_uri: Uri,
+                r: crate::model::types::Range,
+                new_text: String| {
+        changes.entry(file_uri).or_default().push(TextEdit {
+            range: lsp_range(r),
+            new_text,
+        });
     };
 
     match dispatch(&file_models, pos)? {
@@ -125,13 +150,22 @@ pub fn compute_rename(
             let new_table = to_snake_case(new_name);
 
             // Declaration
-            edit(&mut changes, uri.clone(), model.name_range, new_name.to_string());
+            edit(
+                &mut changes,
+                uri.clone(),
+                model.name_range,
+                new_name.to_string(),
+            );
 
             // Scan all files for FK and relationship references
             for entry in state.file_models.iter() {
                 let ref_uri = entry.key().clone();
                 let ref_models = entry.value().clone();
-                let source = state.file_sources.get(&ref_uri).map(|s| s.clone()).unwrap_or_default();
+                let source = state
+                    .file_sources
+                    .get(&ref_uri)
+                    .map(|s| s.clone())
+                    .unwrap_or_default();
 
                 for m in &ref_models {
                     for col in m.columns.values() {
@@ -139,8 +173,10 @@ pub fn compute_rename(
                             let table_match = old_table.as_deref().is_some_and(|t| fk.table == t);
                             let class_match = fk.table == old_name;
                             if table_match || class_match {
-                                let new_table_part = if class_match { new_name } else { &new_table };
-                                let q = quote_char_at(&source, fk.range.start_line, fk.range.start_col);
+                                let new_table_part =
+                                    if class_match { new_name } else { &new_table };
+                                let q =
+                                    quote_char_at(&source, fk.range.start_line, fk.range.start_col);
                                 let new_text = format!("{q}{}.{}{q}", new_table_part, fk.column);
                                 edit(&mut changes, ref_uri.clone(), fk.range, new_text);
                             }
@@ -149,7 +185,12 @@ pub fn compute_rename(
                     for rel in m.relationships.values() {
                         if rel.target_model == old_name {
                             if let Some(target_range) = rel.target_range {
-                                let new_text = quoted(&source, target_range.start_line, target_range.start_col, new_name);
+                                let new_text = quoted(
+                                    &source,
+                                    target_range.start_line,
+                                    target_range.start_col,
+                                    new_name,
+                                );
                                 edit(&mut changes, ref_uri.clone(), target_range, new_text);
                             }
                         }
@@ -166,13 +207,22 @@ pub fn compute_rename(
             let model_name = model.name.clone();
 
             // Declaration
-            edit(&mut changes, uri.clone(), col.name_range, new_name.to_string());
+            edit(
+                &mut changes,
+                uri.clone(),
+                col.name_range,
+                new_name.to_string(),
+            );
 
             // FK references
             for entry in state.file_models.iter() {
                 let ref_uri = entry.key().clone();
                 let ref_models = entry.value().clone();
-                let source = state.file_sources.get(&ref_uri).map(|s| s.clone()).unwrap_or_default();
+                let source = state
+                    .file_sources
+                    .get(&ref_uri)
+                    .map(|s| s.clone())
+                    .unwrap_or_default();
 
                 for m in &ref_models {
                     for c in m.columns.values() {
@@ -180,7 +230,8 @@ pub fn compute_rename(
                             let table_ok = old_table.as_deref().is_some_and(|t| fk.table == t)
                                 || fk.table == model_name;
                             if table_ok && fk.column == old_col_name {
-                                let q = quote_char_at(&source, fk.range.start_line, fk.range.start_col);
+                                let q =
+                                    quote_char_at(&source, fk.range.start_line, fk.range.start_col);
                                 let new_text = format!("{q}{}.{}{q}", fk.table, new_name);
                                 edit(&mut changes, ref_uri.clone(), fk.range, new_text);
                             }
@@ -197,13 +248,22 @@ pub fn compute_rename(
             let owning_model = model.name.clone();
 
             // Declaration
-            edit(&mut changes, uri.clone(), rel.name_range, new_name.to_string());
+            edit(
+                &mut changes,
+                uri.clone(),
+                rel.name_range,
+                new_name.to_string(),
+            );
 
             // back_populates counterparts
             for entry in state.file_models.iter() {
                 let ref_uri = entry.key().clone();
                 let ref_models = entry.value().clone();
-                let source = state.file_sources.get(&ref_uri).map(|s| s.clone()).unwrap_or_default();
+                let source = state
+                    .file_sources
+                    .get(&ref_uri)
+                    .map(|s| s.clone())
+                    .unwrap_or_default();
 
                 for m in &ref_models {
                     for r in m.relationships.values() {
@@ -211,7 +271,12 @@ pub fn compute_rename(
                             && r.back_populates.as_deref() == Some(&old_rel_name)
                         {
                             if let Some(bp_range) = r.back_populates_range {
-                                let new_text = quoted(&source, bp_range.start_line, bp_range.start_col, new_name);
+                                let new_text = quoted(
+                                    &source,
+                                    bp_range.start_line,
+                                    bp_range.start_col,
+                                    new_name,
+                                );
                                 edit(&mut changes, ref_uri.clone(), bp_range, new_text);
                             }
                         }
@@ -232,34 +297,70 @@ pub fn compute_rename(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::types::{
-        Column, ColumnArgs, ForeignKeyRef, MappedType, Range, Relationship,
-    };
+    use crate::model::types::{Column, ColumnArgs, ForeignKeyRef, MappedType, Range, Relationship};
     use crate::state::WorkspaceState;
     use std::collections::HashMap;
 
-    fn uri(s: &str) -> Uri { s.parse().unwrap() }
-    fn rng(sl: u32, sc: u32, el: u32, ec: u32) -> Range { Range { start_line: sl, start_col: sc, end_line: el, end_col: ec } }
-    fn pos(line: u32, ch: u32) -> Position { Position { line, character: ch } }
-
-    fn simple_col(name: &str, name_rng: Range) -> Column {
-        Column { name: name.to_string(), key: None, mapped_type: MappedType::Int, args: ColumnArgs::default(), foreign_key: None, doc: None, name_range: name_rng, full_range: name_rng }
+    fn uri(s: &str) -> Uri {
+        s.parse().unwrap()
+    }
+    fn rng(sl: u32, sc: u32, el: u32, ec: u32) -> Range {
+        Range {
+            start_line: sl,
+            start_col: sc,
+            end_line: el,
+            end_col: ec,
+        }
+    }
+    fn pos(line: u32, ch: u32) -> Position {
+        Position {
+            line,
+            character: ch,
+        }
     }
 
-    fn fk_col(name: &str, name_rng: Range, fk_table: &str, fk_col_name: &str, fk_rng: Range) -> Column {
+    fn simple_col(name: &str, name_rng: Range) -> Column {
         Column {
             name: name.to_string(),
             key: None,
             mapped_type: MappedType::Int,
             args: ColumnArgs::default(),
-            foreign_key: Some(ForeignKeyRef { table: fk_table.to_string(), column: fk_col_name.to_string(), raw_text: format!("{fk_table}.{fk_col_name}"), range: fk_rng }),
+            foreign_key: None,
             doc: None,
             name_range: name_rng,
             full_range: name_rng,
         }
     }
 
-    fn simple_model(name: &str, table: Option<&str>, name_rng: Range) -> crate::model::types::Model {
+    fn fk_col(
+        name: &str,
+        name_rng: Range,
+        fk_table: &str,
+        fk_col_name: &str,
+        fk_rng: Range,
+    ) -> Column {
+        Column {
+            name: name.to_string(),
+            key: None,
+            mapped_type: MappedType::Int,
+            args: ColumnArgs::default(),
+            foreign_key: Some(ForeignKeyRef {
+                table: fk_table.to_string(),
+                column: fk_col_name.to_string(),
+                raw_text: format!("{fk_table}.{fk_col_name}"),
+                range: fk_rng,
+            }),
+            doc: None,
+            name_range: name_rng,
+            full_range: name_rng,
+        }
+    }
+
+    fn simple_model(
+        name: &str,
+        table: Option<&str>,
+        name_rng: Range,
+    ) -> crate::model::types::Model {
         crate::model::types::Model {
             name: name.to_string(),
             table_name: table.map(|t| t.to_string()),
@@ -275,11 +376,49 @@ mod tests {
     }
 
     fn bp_rel(name: &str, target: &str, name_rng: Range, bp: &str, bp_rng: Range) -> Relationship {
-        Relationship { name: name.to_string(), target_model: target.to_string(), explicit_target: None, back_populates: Some(bp.to_string()), lazy: None, uselist: None, secondary: None, cascade: None, is_list: false, backref: None, remote_side: false, has_foreign_keys: false, viewonly: None, name_range: name_rng, full_range: name_rng, target_range: None, back_populates_range: Some(bp_rng), cascade_range: None }
+        Relationship {
+            name: name.to_string(),
+            target_model: target.to_string(),
+            explicit_target: None,
+            back_populates: Some(bp.to_string()),
+            lazy: None,
+            uselist: None,
+            secondary: None,
+            cascade: None,
+            is_list: false,
+            backref: None,
+            remote_side: false,
+            has_foreign_keys: false,
+            viewonly: None,
+            name_range: name_rng,
+            full_range: name_rng,
+            target_range: None,
+            back_populates_range: Some(bp_rng),
+            cascade_range: None,
+        }
     }
 
     fn target_rel(name: &str, target: &str, name_rng: Range, target_rng: Range) -> Relationship {
-        Relationship { name: name.to_string(), target_model: target.to_string(), explicit_target: None, back_populates: None, lazy: None, uselist: None, secondary: None, cascade: None, is_list: false, backref: None, remote_side: false, has_foreign_keys: false, viewonly: None, name_range: name_rng, full_range: name_rng, target_range: Some(target_rng), back_populates_range: None, cascade_range: None }
+        Relationship {
+            name: name.to_string(),
+            target_model: target.to_string(),
+            explicit_target: None,
+            back_populates: None,
+            lazy: None,
+            uselist: None,
+            secondary: None,
+            cascade: None,
+            is_list: false,
+            backref: None,
+            remote_side: false,
+            has_foreign_keys: false,
+            viewonly: None,
+            name_range: name_rng,
+            full_range: name_rng,
+            target_range: Some(target_rng),
+            back_populates_range: None,
+            cascade_range: None,
+        }
     }
 
     // ── REQ-RN-01: prepareRename returns range + placeholder ──────────────────
@@ -319,13 +458,17 @@ mod tests {
         let user_u = uri("file:///user.py");
         let user = simple_model("User", Some("users"), rng(0, 6, 0, 10));
         state.update_file(&user_u, vec![user]);
-        state.file_sources.insert(user_u.clone(), "class User:\n".to_string());
+        state
+            .file_sources
+            .insert(user_u.clone(), "class User:\n".to_string());
 
         let post_u = uri("file:///post.py");
         let fk_rng = rng(3, 30, 3, 42);
         // source for post: the FK starts with "
         let post_src = "class Post:\n    author_id: int\n    author: rel\n    author_id = mapped_column(ForeignKey(\"users.id\"))\n";
-        state.file_sources.insert(post_u.clone(), post_src.to_string());
+        state
+            .file_sources
+            .insert(post_u.clone(), post_src.to_string());
 
         let col = fk_col("author_id", rng(3, 4, 3, 13), "users", "id", fk_rng);
         let target_rng = rng(2, 20, 2, 26);
@@ -344,7 +487,11 @@ mod tests {
 
         // FK rewritten (table half only)
         let post_edits = changes.get(&post_u).unwrap();
-        assert!(post_edits.iter().any(|e| e.new_text.contains("account") && e.new_text.contains(".id")));
+        assert!(
+            post_edits
+                .iter()
+                .any(|e| e.new_text.contains("account") && e.new_text.contains(".id"))
+        );
 
         // Relationship target rewritten
         assert!(post_edits.iter().any(|e| e.new_text.contains("Account")));
@@ -359,11 +506,15 @@ mod tests {
         let user_u = uri("file:///user.py");
         let user = simple_model("User", Some("users"), rng(0, 6, 0, 10));
         state.update_file(&user_u, vec![user]);
-        state.file_sources.insert(user_u.clone(), "class User:\n".to_string());
+        state
+            .file_sources
+            .insert(user_u.clone(), "class User:\n".to_string());
 
         let post_u = uri("file:///post.py");
         let fk_rng = rng(1, 10, 1, 22);
-        state.file_sources.insert(post_u.clone(), "    col = FK(\"users.id\")\n".to_string());
+        state
+            .file_sources
+            .insert(post_u.clone(), "    col = FK(\"users.id\")\n".to_string());
         let col = fk_col("col", rng(1, 4, 1, 7), "users", "id", fk_rng);
         let mut post = simple_model("Post", Some("posts"), rng(0, 6, 0, 10));
         post.columns.insert("col".into(), col);
@@ -374,7 +525,11 @@ mod tests {
         let post_edits = changes.get(&post_u).unwrap();
         // The column half "id" must be preserved
         let fk_edit = post_edits.iter().find(|e| e.range.start.line == 1).unwrap();
-        assert!(fk_edit.new_text.ends_with(".id\""), "column half must be preserved, got: {}", fk_edit.new_text);
+        assert!(
+            fk_edit.new_text.ends_with(".id\""),
+            "column half must be preserved, got: {}",
+            fk_edit.new_text
+        );
     }
 
     // ── REQ-RN-05: column rename updates FK column half only ──────────────────
@@ -388,11 +543,15 @@ mod tests {
         let mut user = simple_model("User", Some("users"), rng(0, 6, 0, 10));
         user.columns.insert("id".into(), id_col);
         state.update_file(&user_u, vec![user]);
-        state.file_sources.insert(user_u.clone(), "class User:\n    id: int\n".to_string());
+        state
+            .file_sources
+            .insert(user_u.clone(), "class User:\n    id: int\n".to_string());
 
         let post_u = uri("file:///post.py");
         let fk_rng = rng(1, 10, 1, 22);
-        state.file_sources.insert(post_u.clone(), "    col = FK(\"users.id\")\n".to_string());
+        state
+            .file_sources
+            .insert(post_u.clone(), "    col = FK(\"users.id\")\n".to_string());
         let col = fk_col("col", rng(1, 4, 1, 7), "users", "id", fk_rng);
         let mut post = simple_model("Post", Some("posts"), rng(0, 6, 0, 10));
         post.columns.insert("col".into(), col);
@@ -408,8 +567,14 @@ mod tests {
         // FK column half updated, table half preserved
         let post_edits = changes.get(&post_u).unwrap();
         let fk_edit = post_edits.iter().find(|e| e.range.start.line == 1).unwrap();
-        assert!(fk_edit.new_text.contains("users."), "table half must be preserved");
-        assert!(fk_edit.new_text.contains("user_id"), "column half must be new name");
+        assert!(
+            fk_edit.new_text.contains("users."),
+            "table half must be preserved"
+        );
+        assert!(
+            fk_edit.new_text.contains("user_id"),
+            "column half must be new name"
+        );
     }
 
     // ── REQ-RN-06: relationship rename rewrites back_populates ────────────────
@@ -419,15 +584,39 @@ mod tests {
         let state = WorkspaceState::new();
 
         let user_u = uri("file:///user.py");
-        let posts_rel = Relationship { name: "posts".to_string(), target_model: "Post".to_string(), explicit_target: None, back_populates: None, lazy: None, uselist: None, secondary: None, cascade: None, is_list: true, backref: None, remote_side: false, has_foreign_keys: false, viewonly: None, name_range: rng(5, 4, 5, 9), full_range: rng(5, 0, 5, 50), target_range: None, back_populates_range: None, cascade_range: None };
+        let posts_rel = Relationship {
+            name: "posts".to_string(),
+            target_model: "Post".to_string(),
+            explicit_target: None,
+            back_populates: None,
+            lazy: None,
+            uselist: None,
+            secondary: None,
+            cascade: None,
+            is_list: true,
+            backref: None,
+            remote_side: false,
+            has_foreign_keys: false,
+            viewonly: None,
+            name_range: rng(5, 4, 5, 9),
+            full_range: rng(5, 0, 5, 50),
+            target_range: None,
+            back_populates_range: None,
+            cascade_range: None,
+        };
         let mut user = simple_model("User", Some("users"), rng(0, 6, 0, 10));
         user.relationships.insert("posts".into(), posts_rel);
         state.update_file(&user_u, vec![user]);
-        state.file_sources.insert(user_u.clone(), "class User:\n".to_string());
+        state
+            .file_sources
+            .insert(user_u.clone(), "class User:\n".to_string());
 
         let post_u = uri("file:///post.py");
         let bp_rng = rng(6, 30, 6, 38);
-        state.file_sources.insert(post_u.clone(), "    r = relationship(User, back_populates=\"posts\")\n".to_string());
+        state.file_sources.insert(
+            post_u.clone(),
+            "    r = relationship(User, back_populates=\"posts\")\n".to_string(),
+        );
         let author_rel = bp_rel("author", "User", rng(6, 4, 6, 10), "posts", bp_rng);
         let mut post = simple_model("Post", Some("posts"), rng(0, 6, 0, 10));
         post.relationships.insert("author".into(), author_rel);
@@ -453,7 +642,9 @@ mod tests {
         let u = uri("file:///user.py");
         let user = simple_model("User", Some("users"), rng(0, 6, 0, 10));
         state.update_file(&u, vec![user]);
-        state.file_sources.insert(u.clone(), "class User:\n".to_string());
+        state
+            .file_sources
+            .insert(u.clone(), "class User:\n".to_string());
 
         let edit = compute_rename(&u, pos(0, 7), "Account", &state).unwrap();
         // One WorkspaceEdit returned (not multiple separate calls)

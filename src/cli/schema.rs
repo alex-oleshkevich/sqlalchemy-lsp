@@ -19,7 +19,11 @@ pub struct SchemaArgs {
 
 pub fn run_schema(args: SchemaArgs) -> i32 {
     let root = if let Some(p) = args.paths.first() {
-        if p.is_absolute() { p.clone() } else { std::env::current_dir().unwrap_or_default().join(p) }
+        if p.is_absolute() {
+            p.clone()
+        } else {
+            std::env::current_dir().unwrap_or_default().join(p)
+        }
     } else {
         std::env::current_dir().unwrap_or_default()
     };

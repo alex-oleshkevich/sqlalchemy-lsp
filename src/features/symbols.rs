@@ -6,8 +6,14 @@ use crate::{alembic::DownRevision, state::WorkspaceState};
 
 fn lsp_range(r: crate::model::types::Range) -> Range {
     Range {
-        start: Position { line: r.start_line, character: r.start_col },
-        end: Position { line: r.end_line, character: r.end_col },
+        start: Position {
+            line: r.start_line,
+            character: r.start_col,
+        },
+        end: Position {
+            line: r.end_line,
+            character: r.end_col,
+        },
     }
 }
 
@@ -45,12 +51,21 @@ pub fn provide_symbols(query: &str, state: &WorkspaceState) -> WorkspaceSymbolRe
 
         let name = symbol_name(&revision, message);
         let location = match mf.revision_range {
-            Some(r) => Location { uri, range: lsp_range(r) },
+            Some(r) => Location {
+                uri,
+                range: lsp_range(r),
+            },
             None => Location {
                 uri,
                 range: Range {
-                    start: Position { line: 0, character: 0 },
-                    end: Position { line: 0, character: 0 },
+                    start: Position {
+                        line: 0,
+                        character: 0,
+                    },
+                    end: Position {
+                        line: 0,
+                        character: 0,
+                    },
                 },
             },
         };
@@ -82,8 +97,17 @@ mod tests {
     use crate::state::WorkspaceState;
     use tower_lsp_server::ls_types::Uri;
 
-    fn uri(s: &str) -> Uri { s.parse().unwrap() }
-    fn rng(sl: u32, sc: u32, el: u32, ec: u32) -> Range { Range { start_line: sl, start_col: sc, end_line: el, end_col: ec } }
+    fn uri(s: &str) -> Uri {
+        s.parse().unwrap()
+    }
+    fn rng(sl: u32, sc: u32, el: u32, ec: u32) -> Range {
+        Range {
+            start_line: sl,
+            start_col: sc,
+            end_line: el,
+            end_col: ec,
+        }
+    }
 
     fn migration(rev: &str, msg: Option<&str>, rev_rng: Range) -> MigrationFile {
         MigrationFile {
@@ -97,9 +121,18 @@ mod tests {
     }
 
     fn seed(state: &WorkspaceState) {
-        state.update_migration(&uri("file:///v1.py"), migration("a1b2c3d4", Some("add user table"), rng(0, 11, 0, 21)));
-        state.update_migration(&uri("file:///v2.py"), migration("f9e8d7c6", Some("add audit table"), rng(0, 11, 0, 21)));
-        state.update_migration(&uri("file:///v3.py"), migration("00112233", Some("init schema"), rng(0, 11, 0, 21)));
+        state.update_migration(
+            &uri("file:///v1.py"),
+            migration("a1b2c3d4", Some("add user table"), rng(0, 11, 0, 21)),
+        );
+        state.update_migration(
+            &uri("file:///v2.py"),
+            migration("f9e8d7c6", Some("add audit table"), rng(0, 11, 0, 21)),
+        );
+        state.update_migration(
+            &uri("file:///v3.py"),
+            migration("00112233", Some("init schema"), rng(0, 11, 0, 21)),
+        );
     }
 
     // ── REQ-SYM-01: each migration emitted as a symbol ───────────────────────
@@ -109,9 +142,14 @@ mod tests {
         let state = WorkspaceState::new();
         seed(&state);
 
-        let WorkspaceSymbolResponse::Flat(syms) = provide_symbols("", &state) else { panic!() };
+        let WorkspaceSymbolResponse::Flat(syms) = provide_symbols("", &state) else {
+            panic!()
+        };
         assert_eq!(syms.len(), 3);
-        assert!(syms.iter().any(|s| s.name.contains("a1b2c3d4") && s.name.contains("add user table")));
+        assert!(
+            syms.iter()
+                .any(|s| s.name.contains("a1b2c3d4") && s.name.contains("add user table"))
+        );
     }
 
     // ── REQ-SYM-02: match by revision id ─────────────────────────────────────
@@ -121,7 +159,9 @@ mod tests {
         let state = WorkspaceState::new();
         seed(&state);
 
-        let WorkspaceSymbolResponse::Flat(syms) = provide_symbols("a1b2", &state) else { panic!() };
+        let WorkspaceSymbolResponse::Flat(syms) = provide_symbols("a1b2", &state) else {
+            panic!()
+        };
         assert_eq!(syms.len(), 1);
         assert!(syms[0].name.contains("a1b2c3d4"));
     }
@@ -133,7 +173,9 @@ mod tests {
         let state = WorkspaceState::new();
         seed(&state);
 
-        let WorkspaceSymbolResponse::Flat(syms) = provide_symbols("AUDIT", &state) else { panic!() };
+        let WorkspaceSymbolResponse::Flat(syms) = provide_symbols("AUDIT", &state) else {
+            panic!()
+        };
         assert_eq!(syms.len(), 1);
         assert!(syms[0].name.contains("add audit table"));
     }
@@ -145,7 +187,9 @@ mod tests {
         let state = WorkspaceState::new();
         seed(&state);
 
-        let WorkspaceSymbolResponse::Flat(syms) = provide_symbols("", &state) else { panic!() };
+        let WorkspaceSymbolResponse::Flat(syms) = provide_symbols("", &state) else {
+            panic!()
+        };
         assert_eq!(syms.len(), 3);
     }
 
@@ -156,7 +200,9 @@ mod tests {
         let state = WorkspaceState::new();
         seed(&state);
 
-        let WorkspaceSymbolResponse::Flat(syms) = provide_symbols("ghost_query_xyz", &state) else { panic!() };
+        let WorkspaceSymbolResponse::Flat(syms) = provide_symbols("ghost_query_xyz", &state) else {
+            panic!()
+        };
         assert!(syms.is_empty());
     }
 
@@ -166,7 +212,9 @@ mod tests {
     fn req_sym_04_no_migrations_no_symbols() {
         let state = WorkspaceState::new();
         // No migrations registered
-        let WorkspaceSymbolResponse::Flat(syms) = provide_symbols("", &state) else { panic!() };
+        let WorkspaceSymbolResponse::Flat(syms) = provide_symbols("", &state) else {
+            panic!()
+        };
         assert!(syms.is_empty());
     }
 }

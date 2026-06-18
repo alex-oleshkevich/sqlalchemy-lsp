@@ -6,13 +6,20 @@ use crate::{model::types::Model, state::WorkspaceState};
 
 fn lsp_range(r: crate::model::types::Range) -> Range {
     Range {
-        start: Position { line: r.start_line, character: r.start_col },
-        end: Position { line: r.end_line, character: r.end_col },
+        start: Position {
+            line: r.start_line,
+            character: r.start_col,
+        },
+        end: Position {
+            line: r.end_line,
+            character: r.end_col,
+        },
     }
 }
 
 fn pos_in(pos: Position, r: crate::model::types::Range) -> bool {
-    let after = pos.line > r.start_line || (pos.line == r.start_line && pos.character >= r.start_col);
+    let after =
+        pos.line > r.start_line || (pos.line == r.start_line && pos.character >= r.start_col);
     let before = pos.line < r.end_line || (pos.line == r.end_line && pos.character < r.end_col);
     after && before
 }
@@ -21,7 +28,10 @@ fn pos_in(pos: Position, r: crate::model::types::Range) -> bool {
 
 fn model_location(model_name: &str, state: &WorkspaceState) -> Option<Location> {
     let loc = state.model_index.get(model_name)?;
-    Some(Location { uri: loc.uri.clone(), range: lsp_range(loc.range) })
+    Some(Location {
+        uri: loc.uri.clone(),
+        range: lsp_range(loc.range),
+    })
 }
 
 fn column_location(model_name: &str, col_name: &str, state: &WorkspaceState) -> Option<Location> {
@@ -31,7 +41,10 @@ fn column_location(model_name: &str, col_name: &str, state: &WorkspaceState) -> 
     let file_models = state.file_models.get(&uri)?;
     let model = file_models.iter().find(|m| m.name == model_name)?;
     let col = model.columns.get(col_name)?;
-    Some(Location { uri, range: lsp_range(col.name_range) })
+    Some(Location {
+        uri,
+        range: lsp_range(col.name_range),
+    })
 }
 
 fn resolve_fk(table: &str, column: &str, state: &WorkspaceState) -> Option<Location> {
@@ -39,17 +52,29 @@ fn resolve_fk(table: &str, column: &str, state: &WorkspaceState) -> Option<Locat
     column_location(&model_name, column, state).or_else(|| model_location(&model_name, state))
 }
 
-fn resolve_back_populates(target_model: &str, bp_name: &str, state: &WorkspaceState) -> Option<Location> {
+fn resolve_back_populates(
+    target_model: &str,
+    bp_name: &str,
+    state: &WorkspaceState,
+) -> Option<Location> {
     let loc = state.model_index.get(target_model)?;
     let uri = loc.uri.clone();
     drop(loc);
     let file_models = state.file_models.get(&uri)?;
     let model = file_models.iter().find(|m| m.name == target_model)?;
     let rel = model.relationships.get(bp_name)?;
-    Some(Location { uri, range: lsp_range(rel.name_range) })
+    Some(Location {
+        uri,
+        range: lsp_range(rel.name_range),
+    })
 }
 
-fn check_model(uri: &Uri, model: &Model, pos: Position, state: &WorkspaceState) -> Option<Location> {
+fn check_model(
+    uri: &Uri,
+    model: &Model,
+    pos: Position,
+    state: &WorkspaceState,
+) -> Option<Location> {
     for rel in model.relationships.values() {
         if let (Some(bp), Some(bp_range)) = (&rel.back_populates, rel.back_populates_range) {
             if pos_in(pos, bp_range) {
@@ -76,7 +101,10 @@ fn check_model(uri: &Uri, model: &Model, pos: Position, state: &WorkspaceState) 
         for (col_name, &col_range) in ta.columns.iter().zip(ta.column_ranges.iter()) {
             if pos_in(pos, col_range) {
                 if let Some(col) = model.columns.get(col_name) {
-                    return Some(Location { uri: uri.clone(), range: lsp_range(col.name_range) });
+                    return Some(Location {
+                        uri: uri.clone(),
+                        range: lsp_range(col.name_range),
+                    });
                 }
             }
         }
@@ -126,7 +154,10 @@ pub fn resolve_definition(
     let source = state.file_sources.get(uri)?;
     let source_bytes = source.as_bytes();
     let root = tree_ref.root_node();
-    let cursor_pt = tree_sitter::Point { row: pos.line as usize, column: pos.character as usize };
+    let cursor_pt = tree_sitter::Point {
+        row: pos.line as usize,
+        column: pos.character as usize,
+    };
     if let Some(leaf) = root.descendant_for_point_range(cursor_pt, cursor_pt) {
         let text = crate::parsing::python::node_text(leaf, source_bytes);
         let bare = text.trim_matches('"').trim_matches('\'');
@@ -160,7 +191,9 @@ fn resolve_column(table: &str, column: &str, state: &WorkspaceState) -> Option<L
     let file_uri = loc.uri.clone();
     drop(loc);
     let file_models = state.file_models.get(&file_uri)?;
-    let model = file_models.iter().find(|m| m.table_name.as_deref() == Some(table))?;
+    let model = file_models
+        .iter()
+        .find(|m| m.table_name.as_deref() == Some(table))?;
     let col = model.columns.get(column)?;
     Some(Location {
         uri: file_uri,
@@ -180,9 +213,23 @@ mod tests {
     use std::collections::HashMap;
     use tower_lsp_server::ls_types::Uri;
 
-    fn uri(s: &str) -> Uri { s.parse().unwrap() }
-    fn rng(sl: u32, sc: u32, el: u32, ec: u32) -> Range { Range { start_line: sl, start_col: sc, end_line: el, end_col: ec } }
-    fn pos(line: u32, ch: u32) -> Position { Position { line, character: ch } }
+    fn uri(s: &str) -> Uri {
+        s.parse().unwrap()
+    }
+    fn rng(sl: u32, sc: u32, el: u32, ec: u32) -> Range {
+        Range {
+            start_line: sl,
+            start_col: sc,
+            end_line: el,
+            end_col: ec,
+        }
+    }
+    fn pos(line: u32, ch: u32) -> Position {
+        Position {
+            line,
+            character: ch,
+        }
+    }
 
     fn simple_col(name: &str, name_rng: Range) -> Column {
         Column {
@@ -198,7 +245,8 @@ mod tests {
     }
 
     fn simple_model(name: &str, table: &str, cols: &[(&str, Range)]) -> Model {
-        let columns: HashMap<String, Column> = cols.iter()
+        let columns: HashMap<String, Column> = cols
+            .iter()
             .map(|(n, r)| (n.to_string(), simple_col(n, *r)))
             .collect();
         Model {
@@ -226,7 +274,12 @@ mod tests {
 
         let post_u = uri("file:///post.py");
         let fk_range = rng(3, 30, 3, 45);
-        let fk = ForeignKeyRef { table: "users".into(), column: "id".into(), raw_text: "users.id".into(), range: fk_range };
+        let fk = ForeignKeyRef {
+            table: "users".into(),
+            column: "id".into(),
+            raw_text: "users.id".into(),
+            range: fk_range,
+        };
         let mut col = simple_col("author_id", rng(3, 4, 3, 13));
         col.foreign_key = Some(fk);
         let mut post = simple_model("Post", "posts", &[]);
@@ -249,7 +302,12 @@ mod tests {
 
         let post_u = uri("file:///post.py");
         let fk_range = rng(3, 30, 3, 50);
-        let fk = ForeignKeyRef { table: "users".into(), column: "missing_col".into(), raw_text: "users.missing_col".into(), range: fk_range };
+        let fk = ForeignKeyRef {
+            table: "users".into(),
+            column: "missing_col".into(),
+            raw_text: "users.missing_col".into(),
+            range: fk_range,
+        };
         let mut col = simple_col("x_id", rng(3, 4, 3, 8));
         col.foreign_key = Some(fk);
         let mut post = simple_model("Post", "posts", &[]);
@@ -391,7 +449,12 @@ mod tests {
         let state = WorkspaceState::new();
         let post_u = uri("file:///post.py");
         let fk_range = rng(3, 30, 3, 50);
-        let fk = ForeignKeyRef { table: "ghost_table".into(), column: "id".into(), raw_text: "ghost_table.id".into(), range: fk_range };
+        let fk = ForeignKeyRef {
+            table: "ghost_table".into(),
+            column: "id".into(),
+            raw_text: "ghost_table.id".into(),
+            range: fk_range,
+        };
         let mut col = simple_col("ref_id", rng(3, 4, 3, 10));
         col.foreign_key = Some(fk);
         let mut post = simple_model("Post", "posts", &[]);

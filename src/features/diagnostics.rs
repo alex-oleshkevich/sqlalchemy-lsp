@@ -28,7 +28,10 @@ pub struct DiagnosticCode {
 
 impl DiagnosticCode {
     pub fn new(code: impl Into<String>, category: impl Into<String>) -> Self {
-        Self { code: code.into(), category: category.into() }
+        Self {
+            code: code.into(),
+            category: category.into(),
+        }
     }
 }
 
@@ -102,7 +105,10 @@ mod tests {
     }
 
     fn loc() -> Location {
-        Location { uri: uri(), range: ByteRange::new(10, 25) }
+        Location {
+            uri: uri(),
+            range: ByteRange::new(10, 25),
+        }
     }
 
     #[test]
@@ -115,20 +121,48 @@ mod tests {
     #[test]
     fn diagnostic_tags_is_empty() {
         assert!(DiagnosticTags::default().is_empty());
-        assert!(!DiagnosticTags { fixable: true, ..Default::default() }.is_empty());
-        assert!(!DiagnosticTags { deprecated: true, ..Default::default() }.is_empty());
-        assert!(!DiagnosticTags { unnecessary: true, ..Default::default() }.is_empty());
+        assert!(
+            !DiagnosticTags {
+                fixable: true,
+                ..Default::default()
+            }
+            .is_empty()
+        );
+        assert!(
+            !DiagnosticTags {
+                deprecated: true,
+                ..Default::default()
+            }
+            .is_empty()
+        );
+        assert!(
+            !DiagnosticTags {
+                unnecessary: true,
+                ..Default::default()
+            }
+            .is_empty()
+        );
     }
 
     #[test]
     fn diagnostic_tags_to_lsp_mapping() {
-        let tags = DiagnosticTags { deprecated: true, unnecessary: true, ..Default::default() };
+        let tags = DiagnosticTags {
+            deprecated: true,
+            unnecessary: true,
+            ..Default::default()
+        };
         let lsp = tags.to_lsp();
         assert!(lsp.contains(&DiagnosticTag::DEPRECATED));
         assert!(lsp.contains(&DiagnosticTag::UNNECESSARY));
 
-        let fixable_only = DiagnosticTags { fixable: true, ..Default::default() };
-        assert!(fixable_only.to_lsp().is_empty(), "fixable has no LSP DiagnosticTag");
+        let fixable_only = DiagnosticTags {
+            fixable: true,
+            ..Default::default()
+        };
+        assert!(
+            fixable_only.to_lsp().is_empty(),
+            "fixable has no LSP DiagnosticTag"
+        );
     }
 
     #[test]
@@ -153,7 +187,10 @@ mod tests {
             message: "missing __tablename__".to_string(),
             location: loc(),
             advices: vec![Advice::Note("Add a __tablename__ attribute.".to_string())],
-            tags: DiagnosticTags { fixable: true, ..Default::default() },
+            tags: DiagnosticTags {
+                fixable: true,
+                ..Default::default()
+            },
         };
         assert_eq!(d.severity, Severity::Warning);
         assert!(d.tags.fixable);

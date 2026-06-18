@@ -2,7 +2,9 @@
 ///
 /// Returns `None` (null response) for non-SQLAlchemy symbols so the companion
 /// Python LSP can answer generic Python hover (REQ-HOV-09, constitution P5).
-use tower_lsp_server::ls_types::{Hover, HoverContents, MarkupContent, MarkupKind, Position, Range, Uri};
+use tower_lsp_server::ls_types::{
+    Hover, HoverContents, MarkupContent, MarkupKind, Position, Range, Uri,
+};
 
 use crate::{model::types::Model, state::WorkspaceState};
 
@@ -10,16 +12,21 @@ use crate::{model::types::Model, state::WorkspaceState};
 
 fn model_range(r: crate::model::types::Range) -> Range {
     Range {
-        start: Position { line: r.start_line, character: r.start_col },
-        end: Position { line: r.end_line, character: r.end_col },
+        start: Position {
+            line: r.start_line,
+            character: r.start_col,
+        },
+        end: Position {
+            line: r.end_line,
+            character: r.end_col,
+        },
     }
 }
 
 fn pos_in(pos: Position, r: crate::model::types::Range) -> bool {
-    let after_start = pos.line > r.start_line
-        || (pos.line == r.start_line && pos.character >= r.start_col);
-    let before_end = pos.line < r.end_line
-        || (pos.line == r.end_line && pos.character < r.end_col);
+    let after_start =
+        pos.line > r.start_line || (pos.line == r.start_line && pos.character >= r.start_col);
+    let before_end = pos.line < r.end_line || (pos.line == r.end_line && pos.character < r.end_col);
     after_start && before_end
 }
 
@@ -27,12 +34,18 @@ fn pos_in(pos: Position, r: crate::model::types::Range) -> bool {
 
 fn cascade_doc(token: &str) -> Option<&'static str> {
     match token.trim() {
-        "save-update" => Some("Cascade session `add()` to related objects when the parent is added."),
-        "merge"       => Some("Cascade `session.merge()` to related objects."),
-        "expunge"     => Some("Cascade `session.expunge()` to related objects."),
-        "delete"      => Some("Delete related objects when the parent is deleted."),
-        "delete-orphan" => Some("Delete related objects when they are de-associated from the parent."),
-        "refresh-expire" => Some("Cascade `session.refresh()` and `session.expire()` to related objects."),
+        "save-update" => {
+            Some("Cascade session `add()` to related objects when the parent is added.")
+        }
+        "merge" => Some("Cascade `session.merge()` to related objects."),
+        "expunge" => Some("Cascade `session.expunge()` to related objects."),
+        "delete" => Some("Delete related objects when the parent is deleted."),
+        "delete-orphan" => {
+            Some("Delete related objects when they are de-associated from the parent.")
+        }
+        "refresh-expire" => {
+            Some("Cascade `session.refresh()` and `session.expire()` to related objects.")
+        }
         "all" => Some("`save-update` + `merge` + `refresh-expire` + `expunge` + `delete`."),
         _ => None,
     }
@@ -48,7 +61,13 @@ fn column_card(model: &Model, col_name: &str, state: &WorkspaceState) -> String 
     let table = model.table_name.as_deref().unwrap_or("—");
 
     let mut md = format!("**{}.{}**", model.name, col_name);
-    let pk_flag = if col.args.primary_key { " *(column, pk)*" } else if col.foreign_key.is_some() { " *(column, FK)*" } else { " *(column)*" };
+    let pk_flag = if col.args.primary_key {
+        " *(column, pk)*"
+    } else if col.foreign_key.is_some() {
+        " *(column, FK)*"
+    } else {
+        " *(column)*"
+    };
     md.push_str(pk_flag);
     md.push_str("\n\n---\n");
     md.push_str("| | |\n|---|---|\n");
@@ -57,7 +76,10 @@ fn column_card(model: &Model, col_name: &str, state: &WorkspaceState) -> String 
     // DB-column alias
     if let Some(alias) = &col.key {
         if alias != col_name {
-            md.push_str(&format!("| column | `{}` ← aliased (attr `{}`) |\n", alias, col_name));
+            md.push_str(&format!(
+                "| column | `{}` ← aliased (attr `{}`) |\n",
+                alias, col_name
+            ));
         }
     }
 
@@ -68,9 +90,7 @@ fn column_card(model: &Model, col_name: &str, state: &WorkspaceState) -> String 
     // Flags
     md.push_str(&format!(
         "| nullable | {} &nbsp;&nbsp; unique &nbsp; {} &nbsp;&nbsp; primary key &nbsp; {} |\n",
-        col.args.nullable,
-        col.args.unique,
-        col.args.primary_key,
+        col.args.nullable, col.args.unique, col.args.primary_key,
     ));
 
     // Default
@@ -81,7 +101,9 @@ fn column_card(model: &Model, col_name: &str, state: &WorkspaceState) -> String 
     }
 
     // Index/constraint membership from __table_args__
-    let in_index: Vec<String> = model.table_args.iter()
+    let in_index: Vec<String> = model
+        .table_args
+        .iter()
         .filter(|ta| ta.columns.iter().any(|c| c == col_name))
         .filter_map(|ta| ta.name.clone())
         .collect();
@@ -105,11 +127,16 @@ fn column_card(model: &Model, col_name: &str, state: &WorkspaceState) -> String 
         md.push_str(&format!("| foreign | {} |\n", target_line));
 
         // Relationships that ride on this FK
-        let backing: Vec<String> = model.relationships.values()
+        let backing: Vec<String> = model
+            .relationships
+            .values()
             .filter(|rel| fk_target_model.as_deref() == Some(rel.target_model.as_str()))
             .map(|rel| {
                 let counterpart = rel.back_populates.as_deref().unwrap_or("?");
-                format!("`{}.{}` ↔ `{}.{}`", model.name, rel.name, rel.target_model, counterpart)
+                format!(
+                    "`{}.{}` ↔ `{}.{}`",
+                    model.name, rel.name, rel.target_model, counterpart
+                )
             })
             .collect();
         if !backing.is_empty() {
@@ -123,14 +150,21 @@ fn column_card(model: &Model, col_name: &str, state: &WorkspaceState) -> String 
         let mut used_by: Vec<String> = Vec::new();
         for entry in state.file_models.iter() {
             for other_model in entry.value().iter() {
-                if other_model.name == model.name { continue; }
+                if other_model.name == model.name {
+                    continue;
+                }
                 for (other_col_name, other_col) in &other_model.columns {
                     if let Some(ref fk) = other_col.foreign_key {
                         if fk.table == table && fk.column == col_name {
                             used_by.push(format!(
                                 "FK  `{}.{}` → `{}.{}`",
-                                other_model.table_name.as_deref().unwrap_or(&other_model.name),
-                                other_col_name, table, col_name
+                                other_model
+                                    .table_name
+                                    .as_deref()
+                                    .unwrap_or(&other_model.name),
+                                other_col_name,
+                                table,
+                                col_name
                             ));
                             // Find relationship that rides on this FK
                             for rel in other_model.relationships.values() {
@@ -169,13 +203,19 @@ fn fk_string_card(table: &str, column: &str, state: &WorkspaceState) -> String {
     let mut md = format!("**ForeignKey(`\"{}.{}\"`)**\n\n---\n", table, column);
     if let Some(model_name) = state.table_index.get(table) {
         let model_name = model_name.clone();
-        md.push_str(&format!("→ `{}.{}` ({}. {})\n", table, column, model_name, column));
+        md.push_str(&format!(
+            "→ `{}.{}` ({}. {})\n",
+            table, column, model_name, column
+        ));
         if let Some(loc) = state.model_index.get(&model_name) {
             let uri_str = loc.uri.to_string();
             md.push_str(&format!("\nDefined in `{}`", uri_str));
         }
     } else {
-        md.push_str(&format!("→ `{}.{}` *(target table not in workspace)*\n", table, column));
+        md.push_str(&format!(
+            "→ `{}.{}` *(target table not in workspace)*\n",
+            table, column
+        ));
     }
     md
 }
@@ -201,7 +241,10 @@ fn relationship_card(model: &Model, rel_name: &str, state: &WorkspaceState) -> S
     if state.model_index.contains_key(&rel.target_model) {
         md.push_str(&format!("| target | {} |\n", cardinality));
     } else {
-        md.push_str(&format!("| target | {} *(unresolved)* |\n", rel.target_model));
+        md.push_str(&format!(
+            "| target | {} *(unresolved)* |\n",
+            rel.target_model
+        ));
     }
 
     if let Some(ref bp) = rel.back_populates {
@@ -220,11 +263,7 @@ fn relationship_card(model: &Model, rel_name: &str, state: &WorkspaceState) -> S
     md
 }
 
-fn back_populates_card(
-    target_model: &str,
-    counterpart: &str,
-    state: &WorkspaceState,
-) -> String {
+fn back_populates_card(target_model: &str, counterpart: &str, state: &WorkspaceState) -> String {
     let loc = match state.model_index.get(target_model) {
         Some(l) => l.clone(),
         None => {
@@ -254,9 +293,16 @@ fn back_populates_card(
     };
     if let Some(rel) = target.relationships.get(counterpart) {
         // Render the counterpart relationship card
-        let mut md = format!("**back_populates** `\"{}\"` → **{}.{}**\n\n---\n", counterpart, target_model, counterpart);
+        let mut md = format!(
+            "**back_populates** `\"{}\"` → **{}.{}**\n\n---\n",
+            counterpart, target_model, counterpart
+        );
         md.push_str("| | |\n|---|---|\n");
-        let cardinality = if rel.is_list { format!("list[{}]", rel.target_model) } else { format!("→ {}", rel.target_model) };
+        let cardinality = if rel.is_list {
+            format!("list[{}]", rel.target_model)
+        } else {
+            format!("→ {}", rel.target_model)
+        };
         md.push_str(&format!("| target | {} |\n", cardinality));
         if let Some(ref lazy) = rel.lazy {
             md.push_str(&format!("| lazy | `{}` |\n", lazy));
@@ -299,20 +345,34 @@ fn model_card(model: &Model, state: &WorkspaceState) -> String {
 
     // Column summary: count + highlights + capped preview
     let n_cols = model.columns.len();
-    let pk_names: Vec<&str> = model.columns.iter()
+    let pk_names: Vec<&str> = model
+        .columns
+        .iter()
         .filter(|(_, c)| c.args.primary_key)
         .map(|(n, _)| n.as_str())
         .collect();
-    let unique_names: Vec<&str> = model.columns.iter()
+    let unique_names: Vec<&str> = model
+        .columns
+        .iter()
         .filter(|(_, c)| c.args.unique && !c.args.primary_key)
         .map(|(n, _)| n.as_str())
         .collect();
-    let fk_count = model.columns.values().filter(|c| c.foreign_key.is_some()).count();
+    let fk_count = model
+        .columns
+        .values()
+        .filter(|c| c.foreign_key.is_some())
+        .count();
 
     let mut highlights = Vec::new();
-    for pk in &pk_names { highlights.push(format!("pk {}", pk)); }
-    for uq in &unique_names { highlights.push(format!("unique {}", uq)); }
-    if fk_count > 0 { highlights.push(format!("{} fk", fk_count)); }
+    for pk in &pk_names {
+        highlights.push(format!("pk {}", pk));
+    }
+    for uq in &unique_names {
+        highlights.push(format!("unique {}", uq));
+    }
+    if fk_count > 0 {
+        highlights.push(format!("{} fk", fk_count));
+    }
 
     let col_names: Vec<&str> = model.columns.keys().map(|s| s.as_str()).collect();
     let preview_cap = 6usize;
@@ -323,7 +383,11 @@ fn model_card(model: &Model, state: &WorkspaceState) -> String {
         format!("{} … +{} more", shown, col_names.len() - preview_cap)
     };
 
-    let highlights_str = if highlights.is_empty() { String::new() } else { format!("  ·  {}", highlights.join("  ·  ")) };
+    let highlights_str = if highlights.is_empty() {
+        String::new()
+    } else {
+        format!("  ·  {}", highlights.join("  ·  "))
+    };
     md.push_str(&format!("| columns | {}{}  |\n", n_cols, highlights_str));
     md.push_str(&format!("| | {} |\n", preview));
 
@@ -331,19 +395,30 @@ fn model_card(model: &Model, state: &WorkspaceState) -> String {
     let n_rels = model.relationships.len();
     if n_rels > 0 {
         let rel_cap = 3usize;
-        let rel_previews: Vec<String> = model.relationships.iter().take(rel_cap)
+        let rel_previews: Vec<String> = model
+            .relationships
+            .iter()
+            .take(rel_cap)
             .map(|(name, rel)| {
                 let resolved = if state.model_index.contains_key(&rel.target_model) {
                     rel.target_model.clone()
                 } else {
                     format!("{} *(unresolved)*", rel.target_model)
                 };
-                let kind = if rel.is_list { format!("list[{}]", resolved) } else { format!("→ {}", resolved) };
+                let kind = if rel.is_list {
+                    format!("list[{}]", resolved)
+                } else {
+                    format!("→ {}", resolved)
+                };
                 format!("`{}` {}", name, kind)
             })
             .collect();
         let rel_summary = if n_rels > rel_cap {
-            format!("{}  … +{} more", rel_previews.join("  ·  "), n_rels - rel_cap)
+            format!(
+                "{}  … +{} more",
+                rel_previews.join("  ·  "),
+                n_rels - rel_cap
+            )
         } else {
             rel_previews.join("  ·  ")
         };
@@ -361,11 +436,7 @@ fn model_card(model: &Model, state: &WorkspaceState) -> String {
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 /// Return a hover card for the construct at `pos`, or `None` (REQ-HOV-09).
-pub fn provide_hover(
-    uri: &Uri,
-    pos: Position,
-    state: &WorkspaceState,
-) -> Option<Hover> {
+pub fn provide_hover(uri: &Uri, pos: Position, state: &WorkspaceState) -> Option<Hover> {
     let file_models = state.file_models.get(uri)?;
     let models = file_models.clone();
 
@@ -422,7 +493,9 @@ pub fn provide_hover(
         for (col_name, col) in &model.columns {
             if pos_in(pos, col.name_range) {
                 let md = column_card(model, col_name, state);
-                if md.is_empty() { continue; }
+                if md.is_empty() {
+                    continue;
+                }
                 return Some(Hover {
                     contents: HoverContents::Markup(MarkupContent {
                         kind: MarkupKind::Markdown,
@@ -437,7 +510,9 @@ pub fn provide_hover(
         for (rel_name, rel) in &model.relationships {
             if pos_in(pos, rel.name_range) {
                 let md = relationship_card(model, rel_name, state);
-                if md.is_empty() { continue; }
+                if md.is_empty() {
+                    continue;
+                }
                 return Some(Hover {
                     contents: HoverContents::Markup(MarkupContent {
                         kind: MarkupKind::Markdown,
@@ -470,19 +545,29 @@ pub fn provide_hover(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::types::{
-        Column, ColumnArgs, ForeignKeyRef, MappedType, Range, Relationship,
-    };
+    use crate::model::types::{Column, ColumnArgs, ForeignKeyRef, MappedType, Range, Relationship};
     use crate::state::WorkspaceState;
     use std::collections::HashMap;
     use tower_lsp_server::ls_types::Uri;
 
-    fn uri(s: &str) -> Uri { s.parse().unwrap() }
+    fn uri(s: &str) -> Uri {
+        s.parse().unwrap()
+    }
 
     fn rng(sl: u32, sc: u32, el: u32, ec: u32) -> Range {
-        Range { start_line: sl, start_col: sc, end_line: el, end_col: ec }
+        Range {
+            start_line: sl,
+            start_col: sc,
+            end_line: el,
+            end_col: ec,
+        }
     }
-    fn pos(line: u32, ch: u32) -> Position { Position { line, character: ch } }
+    fn pos(line: u32, ch: u32) -> Position {
+        Position {
+            line,
+            character: ch,
+        }
+    }
 
     fn simple_model(name: &str, table: &str, col_name: &str) -> Model {
         let col = Column {
@@ -562,7 +647,10 @@ mod tests {
         state.update_file(&u, vec![model]);
 
         let hover = provide_hover(&u, pos(5, 4), &state).unwrap();
-        let md = match hover.contents { HoverContents::Markup(mc) => mc.value, _ => panic!() };
+        let md = match hover.contents {
+            HoverContents::Markup(mc) => mc.value,
+            _ => panic!(),
+        };
         assert!(md.contains("full_name"), "{md}");
         assert!(md.contains("aliased"), "{md}");
     }
@@ -610,7 +698,10 @@ mod tests {
 
         // Position inside the FK string range
         let hover = provide_hover(&u, pos(3, 35), &state).unwrap();
-        let md = match hover.contents { HoverContents::Markup(mc) => mc.value, _ => panic!() };
+        let md = match hover.contents {
+            HoverContents::Markup(mc) => mc.value,
+            _ => panic!(),
+        };
         assert!(md.contains("users"), "{md}");
         assert!(md.contains("id"), "{md}");
         assert!(md.contains("User"), "{md}");
@@ -652,7 +743,10 @@ mod tests {
         state.update_file(&u, vec![model]);
 
         let hover = provide_hover(&u, pos(3, 35), &state).unwrap();
-        let md = match hover.contents { HoverContents::Markup(mc) => mc.value, _ => panic!() };
+        let md = match hover.contents {
+            HoverContents::Markup(mc) => mc.value,
+            _ => panic!(),
+        };
         assert!(md.contains("not in workspace"), "{md}");
     }
 
@@ -692,7 +786,10 @@ mod tests {
         state.update_file(&user_u, vec![user_model]);
 
         let hover = provide_hover(&u, pos(6, 5), &state).unwrap();
-        let md = match hover.contents { HoverContents::Markup(mc) => mc.value, _ => panic!() };
+        let md = match hover.contents {
+            HoverContents::Markup(mc) => mc.value,
+            _ => panic!(),
+        };
         assert!(md.contains("relationship"), "{md}");
         assert!(md.contains("User"), "{md}");
         assert!(md.contains("select"), "{md}");
@@ -773,7 +870,10 @@ mod tests {
         state.update_file(&u, vec![post_model]);
 
         let hover = provide_hover(&u, pos(6, 27), &state).unwrap();
-        let md = match hover.contents { HoverContents::Markup(mc) => mc.value, _ => panic!() };
+        let md = match hover.contents {
+            HoverContents::Markup(mc) => mc.value,
+            _ => panic!(),
+        };
         assert!(md.contains("back_populates"), "{md}");
         assert!(md.contains("User"), "{md}");
         assert!(md.contains("posts"), "{md}");
@@ -814,7 +914,10 @@ mod tests {
         state.update_file(&u, vec![post_model]);
 
         let hover = provide_hover(&u, pos(6, 27), &state).unwrap();
-        let md = match hover.contents { HoverContents::Markup(mc) => mc.value, _ => panic!() };
+        let md = match hover.contents {
+            HoverContents::Markup(mc) => mc.value,
+            _ => panic!(),
+        };
         assert!(md.contains("not found"), "{md}");
     }
 
@@ -828,7 +931,10 @@ mod tests {
         state.update_file(&u, vec![model]);
 
         let hover = provide_hover(&u, pos(0, 7), &state).unwrap();
-        let md = match hover.contents { HoverContents::Markup(mc) => mc.value, _ => panic!() };
+        let md = match hover.contents {
+            HoverContents::Markup(mc) => mc.value,
+            _ => panic!(),
+        };
         assert!(md.contains("class User"), "{md}");
         assert!(md.contains("users"), "{md}");
         assert!(md.contains("model"), "{md}");
@@ -843,7 +949,10 @@ mod tests {
         state.update_file(&u, vec![model]);
 
         let hover = provide_hover(&u, pos(0, 7), &state).unwrap();
-        let md = match hover.contents { HoverContents::Markup(mc) => mc.value, _ => panic!() };
+        let md = match hover.contents {
+            HoverContents::Markup(mc) => mc.value,
+            _ => panic!(),
+        };
         assert!(md.contains("no __tablename__"), "{md}");
     }
 
@@ -887,7 +996,10 @@ mod tests {
 
         // Hover on FK string range → FK string card (not column card)
         let hover = provide_hover(&u, pos(3, 35), &state).unwrap();
-        let md = match hover.contents { HoverContents::Markup(mc) => mc.value, _ => panic!() };
+        let md = match hover.contents {
+            HoverContents::Markup(mc) => mc.value,
+            _ => panic!(),
+        };
         assert!(md.contains("ForeignKey"), "{md}");
         assert!(!md.contains("(column"), "{md}");
     }

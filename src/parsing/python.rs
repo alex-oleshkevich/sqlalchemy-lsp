@@ -43,7 +43,9 @@ mod tests {
         assert!(has_sqlalchemy_indicators("import sqlalchemy as sa"));
         assert!(has_sqlalchemy_indicators("id: Mapped[int]"));
         assert!(has_sqlalchemy_indicators("mapped_column(Integer)"));
-        assert!(has_sqlalchemy_indicators("class Base(DeclarativeBase): pass"));
+        assert!(has_sqlalchemy_indicators(
+            "class Base(DeclarativeBase): pass"
+        ));
         assert!(!has_sqlalchemy_indicators("x = 1\nprint(x)"));
     }
 

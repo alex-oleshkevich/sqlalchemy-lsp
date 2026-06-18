@@ -180,12 +180,22 @@ fn try_parse_op_call(node: &Node, source: &[u8]) -> Option<OpCall> {
     let (table_name, column_name, null_constraint_name_range) =
         extract_op_args(&operation, &args_node, source, full_range);
 
-    Some(OpCall { operation, full_range, table_name, column_name, null_constraint_name_range })
+    Some(OpCall {
+        operation,
+        full_range,
+        table_name,
+        column_name,
+        null_constraint_name_range,
+    })
 }
 
 /// Ops whose first positional arg is a constraint name (not a table name).
-const CONSTRAINT_OPS: &[&str] =
-    &["drop_constraint", "create_foreign_key", "create_unique_constraint", "create_check_constraint"];
+const CONSTRAINT_OPS: &[&str] = &[
+    "drop_constraint",
+    "create_foreign_key",
+    "create_unique_constraint",
+    "create_check_constraint",
+];
 
 /// Extract table, column, and null-constraint-name info from an op call's argument list.
 fn extract_op_args(
@@ -193,7 +203,11 @@ fn extract_op_args(
     args: &Node,
     source: &[u8],
     call_range: crate::model::types::Range,
-) -> (Option<TableRef>, Option<ColumnRef>, Option<crate::model::types::Range>) {
+) -> (
+    Option<TableRef>,
+    Option<ColumnRef>,
+    Option<crate::model::types::Range>,
+) {
     let mut c = args.walk();
     let positional: Vec<Node> = args
         .named_children(&mut c)
@@ -204,13 +218,19 @@ fn extract_op_args(
 
     // For constraint ops the first positional is the constraint name, second is the table.
     // For all other ops the first positional is the table.
-    let (table_idx, constraint_name_idx) =
-        if is_constraint_op { (1, Some(0)) } else { (0, None) };
+    let (table_idx, constraint_name_idx) = if is_constraint_op {
+        (1, Some(0))
+    } else {
+        (0, None)
+    };
 
     let table = positional.get(table_idx).and_then(|n| {
         if n.kind() == "string" {
             let name = strip_string_quotes(node_text(*n, source)).to_string();
-            Some(TableRef { name, range: ts_range(*n) })
+            Some(TableRef {
+                name,
+                range: ts_range(*n),
+            })
         } else {
             None
         }
@@ -222,7 +242,10 @@ fn extract_op_args(
         positional.get(col_idx).and_then(|n| {
             if n.kind() == "string" {
                 let name = strip_string_quotes(node_text(*n, source)).to_string();
-                Some(ColumnRef { name, range: ts_range(*n) })
+                Some(ColumnRef {
+                    name,
+                    range: ts_range(*n),
+                })
             } else {
                 None
             }
@@ -235,7 +258,7 @@ fn extract_op_args(
     let null_constraint_name_range = if let Some(ci) = constraint_name_idx {
         match positional.get(ci) {
             Some(n) if n.kind() == "none" => Some(ts_range(*n)),
-            Some(_) => None, // non-None literal — name is present, skip
+            Some(_) => None,          // non-None literal — name is present, skip
             None => Some(call_range), // constraint name absent — fire on the call
         }
     } else {
@@ -354,7 +377,10 @@ def downgrade() -> None:
         assert!(!mf.op_calls.is_empty());
         let create = mf.op_calls.iter().find(|o| o.operation == "create_table");
         assert!(create.is_some());
-        assert_eq!(create.unwrap().table_name.as_ref().map(|t| t.name.as_str()), Some("users"));
+        assert_eq!(
+            create.unwrap().table_name.as_ref().map(|t| t.name.as_str()),
+            Some("users")
+        );
     }
 
     #[test]
@@ -363,7 +389,10 @@ def downgrade() -> None:
         let mf = extract_migration(MIGRATION_A, &tree).unwrap();
         let drop = mf.op_calls.iter().find(|o| o.operation == "drop_table");
         assert!(drop.is_some());
-        assert_eq!(drop.unwrap().table_name.as_ref().map(|t| t.name.as_str()), Some("users"));
+        assert_eq!(
+            drop.unwrap().table_name.as_ref().map(|t| t.name.as_str()),
+            Some("users")
+        );
     }
 
     #[test]
