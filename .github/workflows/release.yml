@@ -123,6 +123,11 @@ jobs:
           sed -i "s/^pkgver=.*/pkgver=${VERSION}/" pkg/aur/PKGBUILD
           sed -i "s/^sha256sums_x86_64=.*/sha256sums_x86_64=('${X86_SUM}')/" pkg/aur/PKGBUILD
           sed -i "s/^sha256sums_aarch64=.*/sha256sums_aarch64=('${AARCH64_SUM}')/" pkg/aur/PKGBUILD
+          sed -i "s/pkgver = .*/pkgver = ${VERSION}/" pkg/aur/.SRCINFO
+          sed -i "s|source_x86_64 = .*|source_x86_64 = sqlalchemy-lsp-linux-x86_64::https://github.com/${GH_REPO}/releases/download/v${VERSION}/sqlalchemy-lsp-linux-x86_64|" pkg/aur/.SRCINFO
+          sed -i "s|source_aarch64 = .*|source_aarch64 = sqlalchemy-lsp-linux-aarch64::https://github.com/${GH_REPO}/releases/download/v${VERSION}/sqlalchemy-lsp-linux-aarch64|" pkg/aur/.SRCINFO
+          sed -i "s/sha256sums_x86_64 = .*/sha256sums_x86_64 = ${X86_SUM}/" pkg/aur/.SRCINFO
+          sed -i "s/sha256sums_aarch64 = .*/sha256sums_aarch64 = ${AARCH64_SUM}/" pkg/aur/.SRCINFO
           mkdir -p ~/.ssh
           printf '%s\n' "$AUR_SSH_KEY" > ~/.ssh/aur
           chmod 600 ~/.ssh/aur
@@ -130,7 +135,6 @@ jobs:
           git config user.email "alex.oleshkevich@gmail.com"
           git config user.name "Alex Oleshkevich"
           cd pkg/aur
-          makepkg --printsrcinfo > .SRCINFO
           git init
           git add PKGBUILD .SRCINFO
           git commit -m "Update to ${VERSION}"

@@ -31,7 +31,7 @@ export function activate(context: vscode.ExtensionContext) {
         clientOptions,
     );
 
-    context.subscriptions.push(client.start());
+    client.start();
 
     context.subscriptions.push(
         vscode.commands.registerCommand("sqlalchemy-lsp.showSchema", async () => {
