@@ -299,3 +299,59 @@ def test_sqla_w501_legacy_backref():
     """backref= instead of explicit back_populates pair → SQLA-W501."""
     findings = check("w501")
     assert "SQLA-W501" in codes(findings)
+
+
+# ── 7xx Alembic diagnostics ───────────────────────────────────────────────────
+
+
+def test_sqla_w701_broken_chain():
+    """down_revision pointing to a non-existent revision → SQLA-W701."""
+    findings = check("w701")
+    assert "SQLA-W701" in codes(findings)
+    assert all(f["code"] == "SQLA-W701" for f in findings), codes(findings)
+
+
+def test_sqla_w702_multiple_heads():
+    """Two migrations both children of the same parent → two heads → SQLA-W702."""
+    findings = check("w702")
+    assert "SQLA-W702" in codes(findings)
+
+
+def test_sqla_h703_unknown_table():
+    """Migration references a table not in any ORM model → SQLA-H703."""
+    findings = check("h703")
+    assert "SQLA-H703" in codes(findings)
+
+
+def test_sqla_w704_null_constraint_name():
+    """op.drop_constraint(None, ...) uses None as constraint name → SQLA-W704."""
+    findings = check("w704")
+    assert "SQLA-W704" in codes(findings)
+
+
+# ── noqa suppression ──────────────────────────────────────────────────────────
+
+
+def test_noqa_specific_code_suppresses():
+    """# noqa: SQLA-W101 suppresses W101 on that line, other models still fire."""
+    findings = check("noqa")
+    # Only UnsuppressedModel should produce W101; the two suppressed models do not
+    assert len(findings) == 1, f"Expected 1 finding, got: {codes(findings)}"
+    assert findings[0]["code"] == "SQLA-W101"
+    assert "UnsuppressedModel" in findings[0]["message"]
+
+
+def test_noqa_bare_suppresses_all_codes():
+    """Bare # noqa suppresses all codes on that line."""
+    findings = check("noqa")
+    # AlsoSuppressed uses bare # noqa — no finding for it
+    for f in findings:
+        assert "AlsoSuppressed" not in f["message"]
+
+
+def test_noqa_suppressed_models_absent():
+    """SuppressedModel and AlsoSuppressed produce zero findings despite W101 defect."""
+    findings = check("noqa")
+    for f in findings:
+        assert "SuppressedModel" not in f["message"]
+        assert "AlsoSuppressed" not in f["message"]
