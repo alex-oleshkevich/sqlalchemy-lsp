@@ -2,9 +2,9 @@
 
 > **Status:** Draft
 >
-> **Version:** 0.1   ·   **Last updated:** 2026-06-17
+> **Version:** 0.2   ·   **Last updated:** 2026-06-18
 >
-> **Purpose:** How the server turns Python source into the facts [E07](E07-data-model.md) defines — the tree-sitter walk, the detection indicators that decide what to look at, what counts as a model, and the resolution rules for annotated columns, forward references, and user-defined base classes.
+> **Purpose:** How the server turns Python source into the facts [E07](E07-data-model.md) defines — the tree-sitter walk, the detection indicators that decide what to look at, what counts as a model, the per-file symbol table that resolves every import alias, and the resolution rules for annotated columns, forward references, and user-defined base classes.
 >
 > **Depends on:** [E07-data-model](E07-data-model.md), [constitution](../constitution.md)   ·   **Related:** [E01-architecture](E01-architecture.md), [F01-orm-correctness-diagnostics](../features/F01-orm-correctness-diagnostics.md), [F02-best-practice-lints](../features/F02-best-practice-lints.md), [F13-alembic-support](../features/F13-alembic-support.md)
 
@@ -22,7 +22,7 @@ This spec covers:
 - The fast string-check **indicators** that gate SQLAlchemy and Alembic extraction.
 - What is and isn't a model — the `__tablename__`-or-resolved-base rule.
 - The class-body walk that produces columns, relationships, and table-args.
-- Relationship-alias tracking (`relationship as rel`).
+- **Import & symbol resolution** — a per-file table that resolves every alias: modules (`import sqlalchemy as sa`), constructs (`relationship as rel`), column types (`String as Str`), bases (`Base as SuperBase`), models (`User as SomeUser`), and typing helpers (`Optional as Opt`).
 - **Three resolution rules:** `Annotated[...]` columns, forward references / lambdas / quoted names, and user-defined base classes (with their `MetaData`).
 
 ## 2. Non-Goals / Out of Scope
@@ -47,6 +47,7 @@ The mechanical walk is ported from the legacy extractor, which handled the commo
 - **Forward reference** — a model named as a string or lambda before the class exists. (Canonical definition in [glossary](../glossary.md).)
 - **Declarative base** — the project's own root class all models inherit; it owns the shared `MetaData`. (Canonical definition in [glossary](../glossary.md).)
 - **Resolution** — turning an indirect spelling (a quoted name, an alias, a `type_annotation_map` entry) into the same resolved fact a direct spelling would produce.
+- **Symbol table** — the per-file map from each local name to the canonical `(module, original-name)` it was imported as. Built from the import statements; consulted by every resolution rule. (Defined in §5.5.)
 
 ## 5. Detailed Specification
 
@@ -131,15 +132,69 @@ The relationship check happens before the column check, because a relationship a
 
 If the body assigns the same attribute name twice, the later one wins in `columns`, and the earlier one's name range is pushed onto `duplicate_columns` — the raw material for the duplicate-column diagnostic (`SQLA-E103`).
 
-### 5.5 Relationship-alias tracking
+### 5.5 Import & symbol resolution
 
-A project may import `relationship` under an alias, and extraction must still recognize the call.
+Everything downstream depends on knowing what a name *means*. SQLAlchemy code aliases names constantly — `import sqlalchemy as sa`, `from sqlalchemy.orm import relationship as rel`, `from sqlalchemy import String as Str`, `from .models import Base as SuperBase`, `from .users import User as SomeUser`. The extractor resolves all of them through one per-file **symbol table**, so the rest of the walk reasons about *canonical* identities, never surface spellings. Resolve by what a name is *bound to*, never by how it's spelled.
 
-**REQ-EXTRACT-07 — Track import aliases of `relationship` and treat them as relationship calls.**
+**REQ-EXTRACT-07 — Build a per-file symbol table from the imports.**
 
-Before walking classes, the extractor scans the module's `from sqlalchemy…` imports for an aliased import of `relationship` — `from sqlalchemy.orm import relationship as rel`. It collects `relationship` plus every alias into a set. The class-body walk then treats a call to any name in that set (or any `module.<name>` ending in a tracked name) as a relationship call.
+Before walking classes, the extractor reads every import statement into a table mapping each local name to the canonical `(module, original-name)` it binds. It handles every import form:
 
-Take a file that writes `from sqlalchemy.orm import relationship as sa_relationship` and then `project: Mapped["Project"] = sa_relationship("Project", back_populates="properties")`. Without alias tracking the attribute would be misread as a column; with it, the call resolves to a `Relationship` targeting `Project`. The same suffix rule handles `orm.relationship(...)` and `sa.orm.relationship(...)`.
+- `import sqlalchemy` · `import sqlalchemy as sa` · `import sqlalchemy.orm as orm` — module bindings, resolved later through attribute access.
+- `from sqlalchemy import String` · `from sqlalchemy import String as Str` — direct and aliased symbol imports.
+- `from sqlalchemy.orm import relationship as rel, mapped_column as mc` — several, mixed aliased/plain, on one line.
+- `from .models import Base as SuperBase` · `from .users import User as SomeUser` — local (project) imports, aliased.
+- `from typing import Optional as Opt` · `from sqlalchemy import *` — typing helpers, and star imports (recorded as a wildcard source, resolved best-effort).
+
+```python
+# models/post.py — every name below is recorded in the symbol table
+import sqlalchemy as sa                                   # sa      -> sqlalchemy
+from sqlalchemy.orm import relationship as rel, Mapped    # rel     -> sqlalchemy.orm.relationship
+from sqlalchemy import String as Str                      # Str     -> sqlalchemy.String
+from .models import Base as SuperBase                     # SuperBase -> .models.Base
+if TYPE_CHECKING:
+    from .users import User as SomeUser                   # SomeUser -> .users.User  (still recorded)
+```
+
+Names imported under `if TYPE_CHECKING:` are recorded too — that block is the common home for forward-reference imports.
+
+**REQ-EXTRACT-07b — Resolve SQLAlchemy *construct* references through the table.**
+
+The classifier (§5.4) decides whether a value is a `relationship(...)`, `mapped_column(...)`, `column(...)`, or `ForeignKey(...)` by resolving the *called name* to its canonical SQLAlchemy symbol — not by matching literal text. A call resolves whether it's spelled canonical (`relationship(...)`), bare-aliased (`rel(...)`), or attribute-style (`orm.relationship(...)`, `sa.orm.relationship(...)`, via the `orm`/`sa` module bindings). The same resolution recognizes `Mapped`, `DeclarativeBase`, and the abstract bases under any alias. This subsumes the legacy's relationship-only alias tracking.
+
+**REQ-EXTRACT-07c — Resolve column *type* references through the table.**
+
+A type named in `Mapped[...]` or passed to `mapped_column(<Type>(...))` resolves to its canonical SQLAlchemy type even when aliased — `from sqlalchemy import String as Str` then `mapped_column(Str(50))`, or `sa.String(50)`, or `Integer as Int`. The resolved `MappedType::SqlType` carries the *canonical* name (`String`), so hover, the FK-type-mismatch check (`SQLA-W303`), and the unbounded-string lint (`SQLA-H206`) all see the real type regardless of spelling.
+
+**REQ-EXTRACT-07d — Resolve the declarative base through the table, across files and re-exports.**
+
+Base resolution ([REQ-EXTRACT-09](#59-resolving-user-defined-base-classes)) consults the symbol table first. A base imported under an alias — `from .models import Base as SuperBase` then `class User(SuperBase)` — resolves `SuperBase` to `.models.Base`, then follows that to a declarative base via the cross-file base registry. Re-export chains resolve transitively, best-effort: a `Base` defined in `models/base.py` and re-exported from `models/__init__.py` still resolves for a model that imports it from the package.
+
+**REQ-EXTRACT-07e — Resolve model references: symbols by binding, strings by class name.**
+
+A relationship or FK names its target two ways, and they resolve *differently* — conflating them is a false-diagnostic generator, so this rule is exact:
+
+- **Symbol reference** (unquoted) — `relationship(SomeUser)`, `ForeignKey(SomeUser.id)`, `Mapped[SomeUser]`. The local name resolves through the symbol table to the canonical model. With `from .users import User as SomeUser`, `relationship(SomeUser)` targets model `User`.
+- **String reference** (quoted) — `relationship("User")`, `Mapped["User"]`. SQLAlchemy resolves these against its class **registry by the class's own `__name__`**, *not* the local import alias. So `relationship("User")` targets the class named `User` even where it's imported as `SomeUser`; and `relationship("SomeUser")` resolves only if a model class is actually *named* `SomeUser`. The extractor mirrors this exactly: strings resolve against `model_index` by registered class name, symbols resolve through the local table.
+
+```python
+from .users import User as SomeUser
+# symbol ref → resolves via the table to model `User`:
+author:  Mapped[SomeUser]   = relationship(SomeUser)
+# string ref → resolves by class name; "User" hits, "SomeUser" would NOT:
+editor:  Mapped["User"]     = relationship("User")
+```
+
+**REQ-EXTRACT-07f — Resolve typing helpers through the table.**
+
+`Optional`, `List`/`list`, and `Annotated` resolve through the table too. `from typing import Optional as Opt` then `Mapped[Opt[str]]` still infers nullability ([REQ-EXTRACT-08d](#58-resolving-column-nullability-and-cardinality)); `Annotated` under an alias still unwraps ([REQ-EXTRACT-08a](#56-resolution-rule-a-annotated-columns)).
+
+**REQ-EXTRACT-07g — Resolve by binding, not surface name; unresolvable → silence.**
+
+Resolution keys off the binding, never the spelling — which cuts both ways:
+
+- A name that merely *looks* like a SQLAlchemy symbol but is bound to something else — `from mypkg import Thing as String` — is **not** treated as SQLAlchemy's `String`. The surface text is ignored; the binding wins. (This is the negative half of alias support, and it prevents a whole class of false positives.)
+- A name that can't be resolved — it came from `from sqlalchemy import *`, a dynamic re-export, or a module the workspace hasn't indexed — is left unresolved. The construct is handled conservatively and the reference stays silent rather than mis-resolved (P4). Star imports are resolved best-effort against the known SQLAlchemy export set; anything ambiguous stays unresolved.
 
 ### 5.6 Resolution rule (a): `Annotated[...]` columns
 
@@ -197,7 +252,7 @@ A project almost always defines its own declarative base; base-dependent rules m
 
 SQLAlchemy users rarely subclass `DeclarativeBase` directly. They write `class Base(DeclarativeBase): ...` once and inherit `Base` everywhere — often with mixins (`class Post(Base, TimestampMixin)`). Extraction must follow that chain.
 
-The walk treats a class as a declarative base if it extends a known SQLAlchemy abstract base (`DeclarativeBase`, `DeclarativeBaseNoMeta`, `MappedAsDataclass`) **or** another resolved base. So when `User(Base)` is checked against [REQ-EXTRACT-04](#53-what-counts-as-a-model), `Base` resolves transitively to `DeclarativeBase` and `User` is recognized as a model — even though it never names `DeclarativeBase` itself.
+The walk treats a class as a declarative base if it extends a known SQLAlchemy abstract base (`DeclarativeBase`, `DeclarativeBaseNoMeta`, `MappedAsDataclass`) **or** another resolved base. Each base name resolves through the symbol table first ([REQ-EXTRACT-07d](#55-import--symbol-resolution)), so an aliased or cross-file base is recognized. So when `User(Base)` is checked against [REQ-EXTRACT-04](#53-what-counts-as-a-model), `Base` resolves transitively to `DeclarativeBase` and `User` is recognized as a model — even though it never names `DeclarativeBase` itself, and the same holds for `class User(SuperBase)` where `SuperBase` is `Base` imported under an alias.
 
 > **Warning:** This is the subtle one. A literal allow-list of `["DeclarativeBase", "Base"]` (as the legacy code used) misfires two ways: it treats *any* class named `Base` as a base even when it isn't one, and it misses a project base named `Model` or `Entity`. Resolution by inheritance chain is what gets both right.
 
@@ -265,6 +320,66 @@ Walk the `clean-blog` `Post` through extraction. The file passes `has_sqlalchemy
 - A class named `Base` that is *not* a declarative base (doesn't extend one) → correctly *not* treated as a base, because resolution follows the inheritance chain, not the name.
 - A file that is both a model module and a migration → both extractors run; neither suppresses the other ([REQ-EXTRACT-03](#52-detection-indicators)).
 - A dynamic `__tablename__` (computed, not a literal) → `table_name` stays `None`; the model is still indexed if it has a resolved base; no guess at the name (P4).
+- An aliased construct, type, base, or model (`relationship as rel`, `String as Str`, `Base as SuperBase`, `User as SomeUser`) → resolved through the symbol table to its canonical identity; indistinguishable downstream from the un-aliased form ([REQ-EXTRACT-07](#55-import--symbol-resolution)).
+- A non-SQLAlchemy name that *looks* like a construct/type — `from mypkg import Thing as String` → **not** treated as SQLAlchemy's `String`; the binding wins, not the spelling (REQ-EXTRACT-07g). No false column type, no false diagnostic.
+- A string target whose spelling matches a local alias but not a class name — `relationship("SomeUser")` where the class is `User` → unresolved (strings resolve by class name, REQ-EXTRACT-07e); `SQLA-E401` may report it, navigation stays silent.
+- A name from `from sqlalchemy import *` or an unindexed re-export → resolved best-effort; if ambiguous, left unresolved and silent (REQ-EXTRACT-07g, P4).
+
+## 11. Testing
+
+Extraction is the most unit-testable part of the server, and alias resolution is where the bugs hide — so every resolvable kind is tested in **both** its plain and aliased form, plus combined "complex" cases. Shared fixtures live in [E17](E17-testing.md#5-fixtures-registry); this section is the matrix each `REQ-EXTRACT-NN` is held to.
+
+### 11.1 Coverage policy
+
+Target: **100% of this spec's behavior.** Every `REQ-EXTRACT-NN` maps to at least one test, and every edge case in §10 has one. The alias matrix below (§11.2) is the load-bearing part: a plain case and its aliased twin must produce the **identical resolved fact** — that equivalence *is* the assertion.
+
+### 11.2 The alias resolution matrix
+
+Each row is tested twice — plain and aliased — and both must yield the same resolved fact. Fixtures are named under the [E17 registry](E17-testing.md#5-fixtures-registry).
+
+| # | What resolves | Plain form | Aliased form | Verifies | Fixture |
+|---|---|---|---|---|---|
+| 1 | Module import | `import sqlalchemy` → `sqlalchemy.String` | `import sqlalchemy as sa` → `sa.String` | REQ-EXTRACT-07/07c | `alias-module` |
+| 2 | Submodule import | `from sqlalchemy.orm import relationship` | `import sqlalchemy.orm as orm` → `orm.relationship(...)` | REQ-EXTRACT-07b | `alias-submodule` |
+| 3 | Construct import | `relationship(...)` / `mapped_column(...)` | `relationship as rel` / `mapped_column as mc` | REQ-EXTRACT-07b | `alias-construct` |
+| 4 | Attribute-style construct | `relationship(...)` | `sa.orm.relationship(...)` | REQ-EXTRACT-07b | `alias-attr-construct` |
+| 5 | Column type | `mapped_column(String(50))` | `String as Str` → `mapped_column(Str(50))` | REQ-EXTRACT-07c | `alias-type` |
+| 6 | Base class (same file) | `class User(Base)` | `Base as SuperBase` → `class User(SuperBase)` | REQ-EXTRACT-07d/09 | `alias-base` |
+| 7 | Base class (cross-file + re-export) | base in `models/base.py`, imported plainly | imported aliased via `models/__init__.py` re-export | REQ-EXTRACT-07d | `alias-base-crossfile` |
+| 8 | Model ref — symbol | `relationship(User)` / `ForeignKey(User.id)` / `Mapped[User]` | `User as SomeUser` → `relationship(SomeUser)` etc. | REQ-EXTRACT-07e | `alias-model-symbol` |
+| 9 | Model ref — string (by class name) | `relationship("User")` resolves to class `User` | `"User"` still resolves under `User as SomeUser`; `"SomeUser"` does **not** | REQ-EXTRACT-07e | `string-ref-classname` |
+| 10 | Typing helper | `Mapped[Optional[str]]` | `Optional as Opt` → `Mapped[Opt[str]]` | REQ-EXTRACT-07f | `alias-typing` |
+| 11 | `Annotated` alias | `Mapped[Annotated[int, mapped_column(...)]]` | `Annotated as Ann` / aliased `mapped_column` inside | REQ-EXTRACT-07f/08a | `alias-annotated` |
+| 12 | Negative — fake symbol | — | `from mypkg import Thing as String` → not SA's `String` | REQ-EXTRACT-07g | `alias-fake-symbol` |
+| 13 | Negative — unresolved | — | `from sqlalchemy import *` → ambiguous name stays unresolved | REQ-EXTRACT-07g | `alias-star-import` |
+
+### 11.3 Complex / combined cases
+
+- **Everything aliased at once** — an aliased base, an aliased model target, an aliased type, and an aliased `relationship`, in one model, resolve to the same facts as the plain spelling. Fixture: `alias-complex`.
+- **Mixed line** — `from sqlalchemy import String as Str, Integer` (one aliased, one not) resolves both correctly. Fixture: `alias-mixed`.
+- **Two names, one symbol** — the same canonical type imported under two aliases; both resolve identically.
+- **Shadowing** — a class or variable named `String` defined in the module shadows the imported type within its scope; resolution prefers the nearest binding. Fixture: `alias-shadow`.
+- **`TYPE_CHECKING` import** — a model imported only under `if TYPE_CHECKING:` still resolves as a symbol target. Fixture: `alias-type-checking`.
+- **Aliased relationship → aliased model, bidirectional** — `rel(SomeUser, back_populates="posts")` with the counterpart also aliased, resolves the `back_populates` pair (feeds `SQLA-W402`).
+
+### 11.4 Requirement coverage
+
+| Requirement | Covered by |
+|---|---|
+| REQ-EXTRACT-01 | partial/`ERROR`-tree extraction test |
+| REQ-EXTRACT-02 / 03 | indicator gating (incl. aliased-import lines still match) |
+| REQ-EXTRACT-04 | model-recognition (tablename or resolved base) |
+| REQ-EXTRACT-05 / 06 | class-body classification + duplicate-column |
+| REQ-EXTRACT-07 | symbol-table build over every import form |
+| REQ-EXTRACT-07b | matrix rows 2–4 |
+| REQ-EXTRACT-07c | matrix row 5 |
+| REQ-EXTRACT-07d | matrix rows 6–7 |
+| REQ-EXTRACT-07e | matrix rows 8–9 |
+| REQ-EXTRACT-07f | matrix rows 10–11 |
+| REQ-EXTRACT-07g | matrix rows 12–13 |
+| REQ-EXTRACT-08a/b/c/d | Annotated, forward-ref/lambda/quoted, nullability/cardinality tests |
+| REQ-EXTRACT-09 | base resolution + `MetaData` (plain + aliased + cross-file) |
+| REQ-EXTRACT-10 / 11 | Alembic extraction + atomic index handoff |
 
 ## 16. Cross-References
 
@@ -273,4 +388,5 @@ Walk the `clean-blog` `Post` through extraction. The file passes `has_sqlalchemy
 
 ## 17. Changelog
 
+- **2026-06-18** — v0.2: generalized §5.5 from relationship-only alias tracking into full **import & symbol resolution** — a per-file symbol table (REQ-EXTRACT-07) resolving aliased modules, constructs, column types, bases, models, and typing helpers (REQ-EXTRACT-07b–07g), including the symbol-vs-string model-reference distinction and the resolve-by-binding-not-spelling negative rule. Added the §11 Testing section with the plain-vs-aliased resolution matrix, complex/combined cases, and the requirement-coverage table; added the alias edge cases in §10.
 - **2026-06-17** — Initial draft. Ported the tree-sitter walk, detection indicators, the model-recognition rule, the class-body classification, and relationship-alias tracking from the legacy extractor. Added the three new resolution rules: `Annotated[...]`/`type_annotation_map` columns (REQ-EXTRACT-08a/b), forward references / lambdas / quoted names (REQ-EXTRACT-08c), and user-defined base + `MetaData` resolution feeding `SQLA-H107` (REQ-EXTRACT-09). Added the extract→index Mermaid flow.

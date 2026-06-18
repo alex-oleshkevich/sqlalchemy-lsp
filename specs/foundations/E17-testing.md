@@ -2,7 +2,7 @@
 
 > **Status:** Draft
 >
-> **Version:** 0.1   ·   **Last updated:** 2026-06-17
+> **Version:** 0.2   ·   **Last updated:** 2026-06-18
 >
 > **Purpose:** How sqlalchemy-lsp is tested — the coverage policy, the test categories, the tools, and the shared fixtures every feature reuses. Each feature's own plan lives in its spec's §11 and links here.
 >
@@ -212,6 +212,78 @@ The constitution's example cast as a fully consistent, lint-clean SQLAlchemy 2.0
 
 `clean-blog` with an `op.add_column("userz", ...)` naming a table no model defines — triggers `SQLA-H703`. Reused by [F13](../features/F13-alembic-support.md), [F05](../features/F05-go-to-definition.md).
 
+#### Alias resolution fixtures
+
+These back the [E30 §11 alias matrix](E30-extraction-and-indexing.md#11-testing). Each is a `clean-blog` variant that re-spells one construct through an import alias; the test asserts the resolved fact is **identical** to the plain form. All are reused by [E30](E30-extraction-and-indexing.md#11-testing); several also by [F04](../features/F04-hover.md)/[F05](../features/F05-go-to-definition.md) to prove features see through aliases.
+
+### alias-module
+
+`clean-blog` rewritten with `import sqlalchemy as sa`, using `sa.String`, `sa.ForeignKey` throughout — module-binding resolution.
+
+### alias-submodule
+
+`import sqlalchemy.orm as orm` with `orm.relationship(...)`, `orm.mapped_column(...)` — submodule attribute access.
+
+### alias-construct
+
+`from sqlalchemy.orm import relationship as rel, mapped_column as mc` — bare-aliased construct calls.
+
+### alias-attr-construct
+
+Attribute-style `sa.orm.relationship(...)` — the suffix/attribute resolution path.
+
+### alias-type
+
+`from sqlalchemy import String as Str, Integer as Int` with `mapped_column(Str(50))` — aliased column types resolving to canonical names.
+
+### alias-base
+
+A base aliased in the same file: `from .models import Base as SuperBase`, `class User(SuperBase)`.
+
+### alias-base-crossfile
+
+A base defined in `models/base.py`, re-exported from `models/__init__.py`, imported (aliased) by a model — cross-file + re-export base resolution.
+
+### alias-model-symbol
+
+`from .users import User as SomeUser` with `relationship(SomeUser)` / `ForeignKey(SomeUser.id)` / `Mapped[SomeUser]` — symbol target resolution by binding.
+
+### string-ref-classname
+
+`relationship("User")` resolving by registered class name even when `User` is imported as `SomeUser`; and the negative — `relationship("SomeUser")` does *not* resolve to class `User`.
+
+### alias-typing
+
+`from typing import Optional as Opt`, `Mapped[Opt[str]]` — aliased typing helper still infers nullability.
+
+### alias-annotated
+
+`from typing import Annotated as Ann` with an aliased `mapped_column` inside — aliased `Annotated` still unwraps and merges config.
+
+### alias-fake-symbol
+
+The negative case: `from mypkg import Thing as String` — a non-SQLAlchemy name that *looks* like a type must **not** be treated as SQLAlchemy's `String` (resolve by binding, not spelling).
+
+### alias-star-import
+
+`from sqlalchemy import *` then bare `String(50)` — best-effort star resolution; ambiguous names stay unresolved and silent.
+
+### alias-complex
+
+Everything aliased at once — aliased base, aliased model target, aliased type, aliased `relationship` — in one model, resolving to the same facts as the plain spelling.
+
+### alias-mixed
+
+`from sqlalchemy import String as Str, Integer` — one aliased, one not, on the same line; both resolve.
+
+### alias-shadow
+
+A module-level class or variable named `String` shadowing the imported type within its scope — resolution prefers the nearest binding.
+
+### alias-type-checking
+
+A model target imported only under `if TYPE_CHECKING:` — still recorded in the symbol table and resolved as a symbol reference.
+
 #### Cross-cutting fixtures
 
 ### non-ascii
@@ -254,4 +326,5 @@ The rule extends to fixes. `sqlalchemy-lsp check --fix` must produce **byte-iden
 
 ## 9. Changelog
 
+- **2026-06-18** — v0.2: added the **alias resolution fixtures** family (17 `clean-blog` variants — module/submodule/construct/type/base/cross-file/model-symbol/string-by-classname/typing/Annotated/fake-symbol/star-import/complex/mixed/shadow/type-checking) backing the [E30 §11 alias matrix](E30-extraction-and-indexing.md#11-testing), each asserting the aliased spelling resolves to the same fact as the plain one.
 - **2026-06-17** — Initial draft: the unit/integration split, the `cargo test` + `insta` + `cargo llvm-cov` toolchain, the named `clean-blog` fixtures registry with one broken variant per `SQLA-` code, the `non-ascii` and `large-workspace` fixtures, requirement traceability, and the CLI/server parity rule (REQ-TST-05).
