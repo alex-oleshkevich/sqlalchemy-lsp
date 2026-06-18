@@ -16,6 +16,7 @@ use tower_lsp_server::{
         CodeAction, CodeActionKind, CodeActionOptions, CodeActionOrCommand, CodeActionParams,
         CodeActionProviderCapability,
         CompletionOptions, CompletionParams, CompletionResponse,
+        ExecuteCommandOptions, ExecuteCommandParams,
         GotoDefinitionParams, DiagnosticOptions, DiagnosticServerCapabilities, Hover,
         HoverParams,
         DidChangeTextDocumentParams, DidChangeWatchedFilesParams,
@@ -35,7 +36,7 @@ use tower_lsp_server::{
 };
 
 use crate::{
-    features::{code_action, completion, definition, hover, inlay_hints, references, rename, signature_help, symbols},
+    features::{code_action, completion, definition, hover, inlay_hints, references, rename, schema, signature_help, symbols},
     pipeline::{run_pass1, run_pass2},
     state::WorkspaceState,
     util::positions::apply_changes,
@@ -213,6 +214,10 @@ impl LanguageServer for Backend {
                     work_done_progress_options: Default::default(),
                 })),
                 hover_provider: Some(tower_lsp_server::ls_types::HoverProviderCapability::Simple(true)),
+                execute_command_provider: Some(ExecuteCommandOptions {
+                    commands: vec!["sqlalchemy.showSchema".to_string()],
+                    work_done_progress_options: Default::default(),
+                }),
                 ..ServerCapabilities::default()
             },
             offset_encoding: if use_utf8 { Some("utf-8".to_string()) } else { None },
@@ -443,6 +448,21 @@ impl LanguageServer for Backend {
         let range = params.range;
         let hints = inlay_hints::provide_inlay_hints(&uri, &range, &self.state);
         Ok(Some(hints))
+    }
+
+    // ── Execute command ───────────────────────────────────────────────────────
+
+    async fn execute_command(&self, params: ExecuteCommandParams) -> tower_lsp_server::jsonrpc::Result<Option<tower_lsp_server::ls_types::LSPAny>> {
+        if params.command != "sqlalchemy.showSchema" {
+            return Ok(None);
+        }
+        let format = params
+            .arguments
+            .first()
+            .and_then(|v| v.as_str())
+            .unwrap_or("mermaid");
+        let rendered = schema::render_schema(&self.state, format);
+        Ok(Some(serde_json::Value::String(rendered)))
     }
 
     // ── Workspace symbols ─────────────────────────────────────────────────────
