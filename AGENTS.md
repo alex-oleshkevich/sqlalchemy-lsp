@@ -35,7 +35,19 @@ One Rust binary speaks LSP over stdio (`sqlalchemy-lsp lsp --stdio`) and backs a
 
 - Coding conventions, the error/resilience contract, layering rules, and the never-log-to-stdout rule live in [`specs/foundations/E16-conventions.md`](specs/foundations/E16-conventions.md).
 - Governing principles (P1–P6), the diagnostic-code scheme (`SQLA-<SEV><CLASS><NN>`), and the example cast live in [`specs/constitution.md`](specs/constitution.md).
-- Never commit, push, or stage without an explicit instruction from the user.
+## Mandatory Task Loop (ALWAYS follow, no exceptions)
+
+After completing every bead:
+
+1. `/self-review` — fix every finding
+2. `cargo clippy --all-targets -- -D warnings` + `cargo test` — must be green
+3. `git add <files> && git commit -m "beads-<id>: ..."` — commit with bead ref
+4. `bd close <id> --reason "..."` — close the bead
+5. `bd ready` → claim next bead → repeat from step 1
+
+**Never stop between beads. Never skip self-review. Never skip the commit.**
+
+- Git ops are pre-approved for autonomous sessions unless AGENTS.md says otherwise.
 
 ## Non-Interactive Shell Commands
 

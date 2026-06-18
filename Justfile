@@ -1,9 +1,9 @@
 # Step 3 — opt in via ~/.config/zed/settings.json:
-#   "languages": { "Python": { "language_servers": ["babel-lsp", "..."] } }
+#   "languages": { "Python": { "language_servers": ["sqlalchemy-lsp", "..."] } }
 
 install-zed:
     cargo build --release
-    cp target/release/babel-lsp ~/.cargo/bin/
+    cp target/release/sqlalchemy-lsp ~/.cargo/bin/
     ./scripts/install-zed-extension.sh
 
 build:
