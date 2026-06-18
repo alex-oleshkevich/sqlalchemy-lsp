@@ -61,6 +61,12 @@ async fn run_lsp() {
         .with_writer(std::io::stderr)
         .init();
 
+    tracing::info!(
+        "{} v{} starting",
+        env!("CARGO_PKG_NAME"),
+        env!("CARGO_PKG_VERSION")
+    );
+
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
     let (service, socket) = LspService::new(Backend::new);
