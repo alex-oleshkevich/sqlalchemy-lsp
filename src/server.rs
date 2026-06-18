@@ -28,12 +28,12 @@ use tower_lsp_server::{
         RelatedFullDocumentDiagnosticReport,
         ServerCapabilities, ServerInfo, SignatureHelpOptions, SignatureHelpParams,
         TextDocumentPositionParams, TextDocumentSyncCapability, TextDocumentSyncKind, Uri,
-        WorkspaceEdit,
+        WorkspaceEdit, WorkspaceSymbolOptions, WorkspaceSymbolParams, WorkspaceSymbolResponse,
     },
 };
 
 use crate::{
-    features::{completion, definition, hover, references, rename, signature_help},
+    features::{completion, definition, hover, references, rename, signature_help, symbols},
     pipeline::{run_pass1, run_pass2},
     state::WorkspaceState,
     util::positions::apply_changes,
@@ -202,6 +202,10 @@ impl LanguageServer for Backend {
                 }),
                 definition_provider: Some(OneOf::Left(true)),
                 references_provider: Some(OneOf::Left(true)),
+                workspace_symbol_provider: Some(OneOf::Right(WorkspaceSymbolOptions {
+                    work_done_progress_options: Default::default(),
+                    resolve_provider: None,
+                })),
                 rename_provider: Some(OneOf::Right(RenameOptions {
                     prepare_provider: Some(true),
                     work_done_progress_options: Default::default(),
@@ -417,6 +421,13 @@ impl LanguageServer for Backend {
         let include_decl = params.context.include_declaration;
         let locs = references::provide_references(&uri, pos, include_decl, &self.state);
         Ok(if locs.is_empty() { None } else { Some(locs) })
+    }
+
+    // ── Workspace symbols ─────────────────────────────────────────────────────
+
+    async fn symbol(&self, params: WorkspaceSymbolParams) -> Result<Option<WorkspaceSymbolResponse>> {
+        let resp = symbols::provide_symbols(&params.query, &self.state);
+        Ok(Some(resp))
     }
 
     // ── Rename ────────────────────────────────────────────────────────────────
