@@ -1,8 +1,8 @@
 # E02 — Folder Structure
 
-> **Status:** Draft
+> **Status:** Approved
 >
-> **Version:** 0.1   ·   **Last updated:** 2026-06-17
+> **Version:** 0.1   ·   **Last updated:** 2026-06-18
 >
 > **Purpose:** Where code lives in the `src/` tree and which way dependencies point — the source layout every module follows, and the test split that mirrors it.
 >
@@ -221,4 +221,5 @@ The hint-building logic is a new capability, so it lives in `features/inlay_hint
 
 ## 10. Changelog
 
+- **2026-06-18** — Approved.
 - **2026-06-17** — Initial draft: the `parsing` / `model` / `alembic` / `features` / `cli` / `util` layout, the downward-only layering rule, the new `cli/` tree and `util/` floor relative to legacy, the unit/integration/e2e test split, and the generated-file and fixture rules.

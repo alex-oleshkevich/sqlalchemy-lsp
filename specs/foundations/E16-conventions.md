@@ -1,6 +1,6 @@
 # E16 — Conventions
 
-> **Status:** Draft
+> **Status:** Approved
 >
 > **Version:** 0.2   ·   **Last updated:** 2026-06-18
 >
@@ -229,5 +229,6 @@ Target: **100% of this spec's behavior is covered.** Every `REQ-CONV-NN` maps to
 
 ## 11. Changelog
 
+- **2026-06-18** — Approved.
 - **2026-06-18** — Added §5.5 "The diagnostic model" (REQ-CONV-10..13), adapted from Biome's `biome_diagnostics`: the `Diagnostic` shape (code, severity, message, location, advices, tags) as the single model every renderer consumes; structured advices (`CodeFrame`, `Note`, `Diff`, `Suggestion`) over tree-sitter byte ranges; the `Fixable`/`Deprecated`/`Unnecessary` tag bitflags and their LSP `DiagnosticTag` mapping; and the `FixKind` (`Safe`/`Unsafe`/`None`) enum with its governing principle and the F11/F14 `--fix` gate. Cross-links to F01/F02/F11/F14/E15/E17 added. Version 0.1 → 0.2.
 - **2026-06-17** — Initial draft: the error/resilience contract (partial-input degradation, `ERROR`-node tolerance, silence on the unresolvable, handlers never panic) promoted out of E01; the never-log-to-stdout rule; the `rustfmt` + `clippy -D warnings` gate; and the pure-function, downward-only, no-cross-feature-import layering rules.

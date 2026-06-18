@@ -1,6 +1,6 @@
 # E17 — Testing
 
-> **Status:** Draft
+> **Status:** Approved
 >
 > **Version:** 0.2   ·   **Last updated:** 2026-06-18
 >
@@ -326,5 +326,6 @@ The rule extends to fixes. `sqlalchemy-lsp check --fix` must produce **byte-iden
 
 ## 9. Changelog
 
+- **2026-06-18** — Approved.
 - **2026-06-18** — v0.2: added the **alias resolution fixtures** family (17 `clean-blog` variants — module/submodule/construct/type/base/cross-file/model-symbol/string-by-classname/typing/Annotated/fake-symbol/star-import/complex/mixed/shadow/type-checking) backing the [E30 §11 alias matrix](E30-extraction-and-indexing.md#11-testing), each asserting the aliased spelling resolves to the same fact as the plain one.
 - **2026-06-17** — Initial draft: the unit/integration split, the `cargo test` + `insta` + `cargo llvm-cov` toolchain, the named `clean-blog` fixtures registry with one broken variant per `SQLA-` code, the `non-ascii` and `large-workspace` fixtures, requirement traceability, and the CLI/server parity rule (REQ-TST-05).

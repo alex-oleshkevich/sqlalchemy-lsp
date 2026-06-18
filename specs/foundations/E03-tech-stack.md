@@ -1,8 +1,8 @@
 # E03 — Tech Stack
 
-> **Status:** Draft
+> **Status:** Approved
 >
-> **Version:** 0.1   ·   **Last updated:** 2026-06-17
+> **Version:** 0.1   ·   **Last updated:** 2026-06-18
 >
 > **Purpose:** The dependencies, language version, license, and toolchain the server is built on — and why each was chosen. The reference to check before adding a crate.
 >
@@ -170,4 +170,5 @@ Rendered output that's tedious to assert by hand — hover cards, the schema dia
 
 ## 8. Changelog
 
+- **2026-06-18** — Approved.
 - **2026-06-17** — Initial draft: edition 2024 / MSRV 1.85, MIT license + root `LICENSE`, the `tower-lsp-server` 0.23 + `tokio` + `ropey` + `dashmap` + `tree-sitter-python` stack, the `UriExt` rule, tree-sitter and async-runtime usage, the `build.rs` `BUILD_TIMESTAMP` stamp, and the `insta`/`cargo llvm-cov` dev tooling. Records the `tower-lsp-server` choice against ADR-002.

@@ -32,26 +32,26 @@
 
 | Spec | Purpose | Load this when | Status |
 |---|---|---|---|
-| [E01-architecture](foundations/E01-architecture.md) | Process model, two-pass pipeline, protocol conduct, perf budgets | Understanding how it all fits | ✏️ |
-| [E02-folder-structure](foundations/E02-folder-structure.md) | `src/` layout, layering rule, test split | Adding a module | ✏️ |
-| [E03-tech-stack](foundations/E03-tech-stack.md) | Crates, versions, MSRV, license | Touching dependencies | ✏️ |
-| [E07-data-model](foundations/E07-data-model.md) | Model/column/relationship/Alembic types, workspace index | Touching extracted data | ✏️ |
-| [E15-app-config](foundations/E15-app-config.md) | Config sources, keys, `# noqa` suppression | Adding a setting or rule toggle | ✏️ |
-| [E16-conventions](foundations/E16-conventions.md) | Error/resilience contract, lint/layering rules | Writing any handler | ✏️ |
-| [E17-testing](foundations/E17-testing.md) | Coverage policy, categories, fixtures registry, parity | Writing any feature's test plan | ✏️ |
-| [E29-e2e-testing](foundations/E29-e2e-testing.md) | E2E coverage policy, harness, protocol-conformance journeys | Writing a feature's E2E plan | ✏️ |
-| [E30-extraction-and-indexing](foundations/E30-extraction-and-indexing.md) | Tree-sitter extraction, `Annotated`/forward-ref/base resolution | Touching parsing/indexing | ✏️ |
+| [E01-architecture](foundations/E01-architecture.md) | Process model, two-pass pipeline, protocol conduct, perf budgets | Understanding how it all fits | ✅ |
+| [E02-folder-structure](foundations/E02-folder-structure.md) | `src/` layout, layering rule, test split | Adding a module | ✅ |
+| [E03-tech-stack](foundations/E03-tech-stack.md) | Crates, versions, MSRV, license | Touching dependencies | ✅ |
+| [E07-data-model](foundations/E07-data-model.md) | Model/column/relationship/Alembic types, workspace index | Touching extracted data | ✅ |
+| [E15-app-config](foundations/E15-app-config.md) | Config sources, keys, `# noqa` suppression | Adding a setting or rule toggle | ✅ |
+| [E16-conventions](foundations/E16-conventions.md) | Error/resilience contract, lint/layering rules | Writing any handler | ✅ |
+| [E17-testing](foundations/E17-testing.md) | Coverage policy, categories, fixtures registry, parity | Writing any feature's test plan | ✅ |
+| [E29-e2e-testing](foundations/E29-e2e-testing.md) | E2E coverage policy, harness, protocol-conformance journeys | Writing a feature's E2E plan | ✅ |
+| [E30-extraction-and-indexing](foundations/E30-extraction-and-indexing.md) | Tree-sitter extraction, `Annotated`/forward-ref/base resolution | Touching parsing/indexing | ✅ |
 
 ## Tier 4 — Features
 
 | Spec | Purpose | Load this when | Status |
 |---|---|---|---|
 | [F00-template](features/F00-template.md) | Boilerplate for new feature specs | Starting a new feature | — |
-| [F01-orm-correctness-diagnostics](features/F01-orm-correctness-diagnostics.md) | Correctness findings (`SQLA-1xx`–`4xx`) | Working on diagnostics | ✏️ |
-| [F02-best-practice-lints](features/F02-best-practice-lints.md) | Best-practice lints (`SQLA-5xx`/`6xx` + more) | Working on lints | ✏️ |
-| [F03-completions](features/F03-completions.md) | Context-aware completions + snippets | Working on completion | ✏️ |
-| [F04-hover](features/F04-hover.md) | Model/column/relationship hover cards | Working on hover | ✏️ |
-| [F05-go-to-definition](features/F05-go-to-definition.md) | Jump to model/column/counterpart | Working on navigation | ✏️ |
+| [F01-orm-correctness-diagnostics](features/F01-orm-correctness-diagnostics.md) | Correctness findings (`SQLA-1xx`–`4xx`) | Working on diagnostics | ✅ |
+| [F02-best-practice-lints](features/F02-best-practice-lints.md) | Best-practice lints (`SQLA-5xx`/`6xx` + more) | Working on lints | ✅ |
+| [F03-completions](features/F03-completions.md) | Context-aware completions + snippets | Working on completion | ✅ |
+| [F04-hover](features/F04-hover.md) | Model/column/relationship hover cards | Working on hover | ✅ |
+| [F05-go-to-definition](features/F05-go-to-definition.md) | Jump to model/column/counterpart | Working on navigation | ✅ |
 | [F06-find-references](features/F06-find-references.md) | Find model/column/relationship refs | Working on references | ✏️ |
 | [F07-rename](features/F07-rename.md) | Workspace rename of models/columns/relationships | Working on rename | ✏️ |
 | [F08-symbols](features/F08-symbols.md) | Document + workspace symbols | Working on symbols | ✏️ |
@@ -99,6 +99,7 @@ When you author or change a spec, update its row here in the same edit. When a s
 
 ## Changelog
 
+- **2026-06-18** — **Approved** all 9 foundations (E01, E02, E03, E07, E15, E16, E17, E29, E30) and features F01–F05; status icons flipped to ✅.
 - **2026-06-18** — `SQLA-I207` (missing-column-comment) now ships **off by default** ([ADR-008](decisions/ADR-008-default-off-missing-column-comment.md), amending ADR-003): the off-by-default set is now three rules (`H416`/`H602` as shaky heuristics, `I207` as opt-in style). Propagated through `F02` (v0.4) and `E15` (v0.4).
 - **2026-06-18** — Suite refinements: dropped the `naming_convention` config key (read from code); generalized alias resolution in `E30` (+ alias test matrix/fixtures in `E17`); adapted seven patterns from Biome — safe/unsafe fixes (`F11`/`F14`), single-traversal diagnostics engine + lazy code-action resolve (`E01`), the diagnostic model with structured advices, tags, and `FixKind` (`E16`), config `overrides`/group-tokens/presets + central code registry (`E15`), and `Deprecated` LSP tags on modernization lints (`F02`). Version bumps across E01/E15/E16/E17/E30 and F01/F02/F11/F14.
 - **2026-06-17** — Initial index: meta + product approved; foundations (incl. appended `E30`), 16 features, and 7 ADRs registered as Draft.

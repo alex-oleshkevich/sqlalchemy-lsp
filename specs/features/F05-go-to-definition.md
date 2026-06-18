@@ -1,8 +1,8 @@
 # F05 — Go to Definition
 
-> **Status:** Draft
+> **Status:** Approved
 >
-> **Version:** 0.1   ·   **Last updated:** 2026-06-17
+> **Version:** 0.1   ·   **Last updated:** 2026-06-18
 >
 > **Purpose:** Jump from a SQLAlchemy or Alembic reference to the thing it names — a foreign key to its target column, a relationship to its target model, a `back_populates` to its counterpart, a `__table_args__` column to its definition, and a migration's table or column to the model behind it.
 >
@@ -265,4 +265,5 @@ The §12.2 scenarios, written Given/When/Then, are this feature's acceptance cri
 
 ## 17. Changelog
 
+- **2026-06-18** — Approved.
 - **2026-06-17** — Initial draft. Ported the legacy `definition.rs` jumps (FK → column, relationship → model, `back_populates` → counterpart, `__table_args__` column → definition, Alembic table/column → model, bare-name fallback) into ten requirements, made the unresolved-target `null` rule explicit per P4, and added the testing and E2E plans against the `clean-blog` cast.

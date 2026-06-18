@@ -1,6 +1,6 @@
 # F02 — Best-Practice Lints
 
-> **Status:** Draft
+> **Status:** Approved
 >
 > **Version:** 0.4   ·   **Last updated:** 2026-06-18
 >
@@ -801,6 +801,7 @@ Accessibility (§13.2) is N/A — F02 is a pure-data diagnostics feature with no
 
 ## 17. Changelog
 
+- **2026-06-18** — Approved.
 - **2026-06-18** — v0.4: `SQLA-I207` (missing-column-comment) now ships off by default ([ADR-008](../decisions/ADR-008-default-off-missing-column-comment.md)) — off for noise/opinion, not heuristic instability; reframed the default-off set from two rules to three.
 - **2026-06-18** — v0.3: The three modernization rules `SQLA-W501` (legacy-backref), `SQLA-W502` (legacy-declarative-base), and `SQLA-I503` (legacy-query-api) now carry the LSP `Deprecated` diagnostic tag ([E16](../foundations/E16-conventions.md)), so editors render them struck through. Added REQ-LINT-19b and the three per-rule **Tag** notes (§5.6), an E2E scenario (E2E-15) and acceptance criterion (AC-10) asserting the published diagnostic includes the tag.
 - **2026-06-18** — v0.2: `SQLA-H106`/`SQLA-H107` now read the `naming_convention` **only from the resolved base's `MetaData`** in code; the `naming_convention` config key was dropped from [E15](../foundations/E15-app-config.md). Added the `env.py`-configured-convention false-positive edge case (§10) and OQ-LINT-2 (§15).

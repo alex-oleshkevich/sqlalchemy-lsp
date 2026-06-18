@@ -1,6 +1,6 @@
 # E01 — Architecture
 
-> **Status:** Draft
+> **Status:** Approved
 >
 > **Version:** 0.2   ·   **Last updated:** 2026-06-18
 >
@@ -252,5 +252,6 @@ flowchart LR
 
 ## 12. Changelog
 
+- **2026-06-18** — Approved.
 - **2026-06-18** (v0.2) — Added two patterns adapted from Biome. New §5.7 specifies the single-traversal diagnostics engine (REQ-ARCH-16): one tree walk dispatching each node to a rule registry keyed by node kind, rules emitting span-ordered signals, `# noqa` suppression applied at flush — replacing the per-rule re-walk and serving both Pass 1 and the relink inside the §8 budget. New REQ-ARCH-15 in §5.6 specifies lazy code-action resolution: `codeActionProvider.resolveProvider = true`, with `textDocument/codeAction` returning action metadata and the `WorkspaceEdit` computed only on `codeAction/resolve`. Cross-linked [F01](../features/F01-orm-correctness-diagnostics.md), [F02](../features/F02-best-practice-lints.md), [F11](../features/F11-code-actions.md), [E15](E15-app-config.md), and [E16](E16-conventions.md).
 - **2026-06-17** — Initial draft: the single stdio binary sharing one pipeline across `lsp` and `check`, static-analysis-only operation, the two-pass pipeline with a ~300 ms debounce and generation counter, indicator-gated file detection, pure-function feature dispatch, the no-stale-data guarantee, protocol conduct (per-URI ordering + `spawn_blocking`, UTF-8/16 negotiation, push+pull diagnostics, non-blocking `initialize`, refresh-after-relink, mandatory file watching with open-buffer-overlay precedence), the measurable performance budgets, and the two-pass pipeline diagram. Records [ADR-005](../decisions/ADR-005-stdio-only-transport.md) (stdio-only) and [ADR-006](../decisions/ADR-006-debounce-and-generation-counter.md) (debounce + generation counter).

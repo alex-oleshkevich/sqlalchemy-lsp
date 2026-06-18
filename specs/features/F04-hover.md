@@ -1,8 +1,8 @@
 # F04 — Hover
 
-> **Status:** Draft
+> **Status:** Approved
 >
-> **Version:** 0.1   ·   **Last updated:** 2026-06-17
+> **Version:** 0.1   ·   **Last updated:** 2026-06-18
 >
 > **Purpose:** The hover cards the server renders for SQLAlchemy constructs — models, columns, relationships, foreign keys, cascade tokens, and `back_populates` — including the cross-referenced attribute-access card for `User.name` that joins facts from across the workspace.
 >
@@ -398,4 +398,5 @@ The §12.2 scenarios, written Given/When/Then, are this feature's acceptance cri
 
 ## 16. Changelog
 
+- **2026-06-18** — Approved.
 - **2026-06-17** — Initial draft. Ported the legacy hover cards (model, column, FK string, relationship, cascade, `back_populates`) and specified the new cross-referenced column card — DB alias, index/constraint membership, cross-file FK target, and relationships-that-use — plus the `sa.`-prefixed-form rule and the null-on-non-SQLAlchemy companion rule. Added the three canonical ASCII cards (column, FK column, model), the cascade and relationship card sketches, the testing and E2E plans, and the §13.1/§13.2 non-functional sections.

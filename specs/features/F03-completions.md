@@ -1,8 +1,8 @@
 # F03 — Completions
 
-> **Status:** Draft
+> **Status:** Approved
 >
-> **Version:** 0.1   ·   **Last updated:** 2026-06-17
+> **Version:** 0.1   ·   **Last updated:** 2026-06-18
 >
 > **Purpose:** Context-aware completions that fire only inside SQLAlchemy and Alembic constructs — foreign-key strings, `relationship()`/`mapped_column()` kwargs and values, `__table_args__` column names, model-constructor keywords, Alembic op names and arguments, plus a small set of code snippets. In plain-Python positions it returns nothing.
 >
@@ -489,6 +489,7 @@ The §12.2 scenarios, written Given/When/Then, are this feature's acceptance cri
 
 ## 17. Changelog
 
+- **2026-06-18** — Approved.
 - **2026-06-17** — Initial draft. Specified the context-aware completion sets (Alembic ops + args, FK strings, relationship kwargs/values, `mapped_column` kwargs, `__table_args__` columns, model-constructor keywords) and the file-root/class-body snippets, all ported from the legacy completion handler; pinned the companion-gate negative contract (REQ-CMP-15) and the trigger-character set; added the §6 completion-list mockups and the §7 trigger decision tree.
 </content>
 </invoke>

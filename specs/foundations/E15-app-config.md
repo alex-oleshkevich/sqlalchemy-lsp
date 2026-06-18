@@ -1,6 +1,6 @@
 # E15 — App Config
 
-> **Status:** Draft
+> **Status:** Approved
 >
 > **Version:** 0.4   ·   **Last updated:** 2026-06-18
 >
@@ -351,6 +351,7 @@ Target: **100% of this spec's behavior is covered.** Every `REQ-CFG-NN` maps to 
 
 ## 12. Changelog
 
+- **2026-06-18** — Approved.
 - **2026-06-18** — v0.4: per [ADR-008](../decisions/ADR-008-default-off-missing-column-comment.md) (amending [ADR-003](../decisions/ADR-003-comprehensive-lints-defaults.md)), the off-by-default set is now three rules; `SQLA-I207` (missing-column-comment) joins `SQLA-H416`/`SQLA-H602` (§5.5 REQ-CFG-07, §5.8, §5.10). The reasons differ: H416/H602 are off as shaky **preview** heuristics that false-positive, while I207 is off as an opt-in style rule that fires on nearly every column — its detection is exact, just noisy. The `recommended` preset now excludes all three; `all` still includes them.
 - **2026-06-18** — v0.3: added three capabilities adapted from Biome. Glob-scoped `overrides` (§5.9, REQ-CFG-13) layer `diagnostics` config on top of the base per file path. `select`/`ignore`/`severity` now accept **class tokens** (`SQLA-3xx`) and `select` accepts the **presets** `recommended` (new default), `all`, and `none`, with specificity code > class > preset (§5.8, REQ-CFG-12); the default `diagnostics.select` changed from `["all"]` to `["recommended"]`. Added a single authoritative **code registry** as the source of truth from which the F01/F02/F13 catalogs and docs are generated (§5.10, REQ-CFG-14), referencing the `FixKind`/tag model in [E16](E16-conventions.md); `SQLA-H416`/`SQLA-H602` are now framed as the two "preview" off-by-default rules. The §5.5 code scheme and §5.6 `# noqa` rules are unchanged.
 - **2026-06-18** — v0.2: removed the `naming_convention` config key. The naming convention is now read **only from the resolved declarative base's `MetaData`** in code ([E30](E30-extraction-and-indexing.md)); `SQLA-H106`/`SQLA-H107` and the F11 scaffold no longer consult config. Trade-off: a project that sets its convention in Alembic's `env.py` rather than on the base is no longer seen, so `SQLA-H107` may false-positive there — disable the rule or use `# noqa` (see [F02](../features/F02-best-practice-lints.md) §10).

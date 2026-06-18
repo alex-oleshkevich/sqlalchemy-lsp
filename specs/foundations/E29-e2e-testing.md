@@ -1,8 +1,8 @@
 # E29 — End-to-End Testing
 
-> **Status:** Draft
+> **Status:** Approved
 >
-> **Version:** 0.1   ·   **Last updated:** 2026-06-17
+> **Version:** 0.1   ·   **Last updated:** 2026-06-18
 >
 > **Purpose:** How sqlalchemy-lsp is tested end to end — the coverage policy for full protocol journeys, the `pytest-lsp` harness, and the patterns every feature's E2E plan reuses. Each feature's own journeys live in its spec's §12 and link here.
 >
@@ -95,4 +95,5 @@ Features reference these rather than re-testing them. A feature's §12 lists onl
 
 ## 9. Changelog
 
+- **2026-06-18** — Approved.
 - **2026-06-17** — Initial draft: the E2E coverage policy (happy + every error path), the `pytest-lsp` + `lsprotocol` stdio harness against the built binary (replacing the legacy hand-rolled `LspClient`), per-scenario fixture isolation and teardown, the wait-on-state and dual-encoding patterns, and the shared protocol-conformance journey set (REQ-E2E-03).

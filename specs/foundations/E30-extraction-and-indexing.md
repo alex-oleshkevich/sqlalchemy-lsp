@@ -1,6 +1,6 @@
 # E30 — Extraction & Indexing
 
-> **Status:** Draft
+> **Status:** Approved
 >
 > **Version:** 0.2   ·   **Last updated:** 2026-06-18
 >
@@ -388,5 +388,6 @@ Each row is tested twice — plain and aliased — and both must yield the same 
 
 ## 17. Changelog
 
+- **2026-06-18** — Approved.
 - **2026-06-18** — v0.2: generalized §5.5 from relationship-only alias tracking into full **import & symbol resolution** — a per-file symbol table (REQ-EXTRACT-07) resolving aliased modules, constructs, column types, bases, models, and typing helpers (REQ-EXTRACT-07b–07g), including the symbol-vs-string model-reference distinction and the resolve-by-binding-not-spelling negative rule. Added the §11 Testing section with the plain-vs-aliased resolution matrix, complex/combined cases, and the requirement-coverage table; added the alias edge cases in §10.
 - **2026-06-17** — Initial draft. Ported the tree-sitter walk, detection indicators, the model-recognition rule, the class-body classification, and relationship-alias tracking from the legacy extractor. Added the three new resolution rules: `Annotated[...]`/`type_annotation_map` columns (REQ-EXTRACT-08a/b), forward references / lambdas / quoted names (REQ-EXTRACT-08c), and user-defined base + `MetaData` resolution feeding `SQLA-H107` (REQ-EXTRACT-09). Added the extract→index Mermaid flow.

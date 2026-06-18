@@ -1,6 +1,6 @@
 # F01 — ORM Correctness Diagnostics
 
-> **Status:** Draft
+> **Status:** Approved
 >
 > **Version:** 0.2   ·   **Last updated:** 2026-06-18
 >
@@ -673,5 +673,6 @@ Performance budgets, observability, accessibility, permissions, and rollout are 
 
 ## 17. Changelog
 
+- **2026-06-18** — Approved.
 - **2026-06-18** — v0.2: Noted in §8 that correctness findings carry diagnostic **tags** per the [E16](../foundations/E16-conventions.md) model so the tag plumbing is exercised uniformly with F02 — F01 codes mostly set only `Fixable` when a quick-fix exists, and none are `Deprecated`/`Unnecessary`.
 - **2026-06-17** — Initial draft. Ported the legacy correctness diagnostics (`diagnostics.rs`) into the `SQLA-` scheme: `1xx` structure (`W101`, `E102`, `E103`, `E105`), the `2xx` nullable rule (`W201`), `3xx` foreign keys (`E301`, `E302`, `W303`), and `4xx` relationships (`E401`, `W402`, `W403`, `W404`, `W405`, `H406`, `H407`, `W408`, `W409`, `H410`). Mapped each to a `REQ-DIAG-NN` with trigger, message, `clean-blog` example, and detectability notes; added the configuration/suppression and engine-parity requirements, the catalog table, the two-pass engine diagram, the per-code test plan with §11.4 coverage, the full E2E scenario set, and the inherited static-analysis security posture. Deferred the remaining `1xx`–`4xx` codes to [F02](F02-best-practice-lints.md) and the `7xx` Alembic rules to [F13](F13-alembic-support.md).

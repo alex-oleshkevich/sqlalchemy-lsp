@@ -1,8 +1,8 @@
 # E07 — Data Model
 
-> **Status:** Draft
+> **Status:** Approved
 >
-> **Version:** 0.1   ·   **Last updated:** 2026-06-17
+> **Version:** 0.1   ·   **Last updated:** 2026-06-18
 >
 > **Purpose:** The in-memory shapes the whole server reads — the model, column, relationship, and Alembic facts, plus the workspace index that joins them. Every feature reads these structures; none re-parses.
 >
@@ -379,4 +379,5 @@ When you hover `Post.author_id`, the hover feature reads the `Column`, sees the 
 
 ## 17. Changelog
 
+- **2026-06-18** — Approved.
 - **2026-06-17** — Initial draft. Ported the SQLAlchemy facts (`Model`, `Column` + `ColumnArgs` + `ForeignKeyRef`, `Relationship`, `TableArg`, `MappedType`) and the Alembic facts (`MigrationFile`, `OpCall`, `TableRef`, `ColumnRef`, `DownRevision`) from the legacy types, added the `Column.key` alias field for [F04](../features/F04-hover.md), and specified the seven-map `WorkspaceState` index with its atomic-replacement and single-source-of-truth rules.
