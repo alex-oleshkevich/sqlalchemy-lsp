@@ -45,6 +45,8 @@ pub struct Backend {
     debounce_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     /// True when the client advertised `workspace.inlayHint.refreshSupport`.
     supports_inlay_hint_refresh: Arc<AtomicBool>,
+    /// True when the client advertised `workspace.didChangeWatchedFiles.dynamicRegistration`.
+    supports_dynamic_registration: Arc<AtomicBool>,
     /// Per-URI locks to serialize document mutations (didOpen/didChange/didClose) for each URI.
     uri_locks: Arc<DashMap<Uri, Arc<tokio::sync::Mutex<()>>>>,
     /// Root URI discovered during `initialize`, used to drive the background workspace scan.
@@ -60,6 +62,7 @@ impl Backend {
             uses_utf8: Arc::new(AtomicBool::new(false)),
             debounce_handle: Arc::new(Mutex::new(None)),
             supports_inlay_hint_refresh: Arc::new(AtomicBool::new(false)),
+            supports_dynamic_registration: Arc::new(AtomicBool::new(false)),
             uri_locks: Arc::new(DashMap::new()),
             root_uri: Arc::new(Mutex::new(None)),
         }
@@ -132,6 +135,16 @@ impl LanguageServer for Backend {
             .unwrap_or(false);
         self.supports_inlay_hint_refresh.store(refresh, Ordering::Relaxed);
 
+        // Record whether the client supports dynamic file-watcher registration.
+        let dyn_reg = params
+            .capabilities
+            .workspace
+            .as_ref()
+            .and_then(|w| w.did_change_watched_files.as_ref())
+            .and_then(|w| w.dynamic_registration)
+            .unwrap_or(false);
+        self.supports_dynamic_registration.store(dyn_reg, Ordering::Relaxed);
+
         // Store the root URI for the background workspace scan started in `initialized`.
         #[allow(deprecated)]
         let root = params
@@ -181,34 +194,36 @@ impl LanguageServer for Backend {
             .log_message(MessageType::INFO, "sqlalchemy-lsp initialized")
             .await;
 
-        // Register a file watcher so we track changes outside the editor.
-        let reg_opts = serde_json::to_value(DidChangeWatchedFilesRegistrationOptions {
-            watchers: vec![
-                FileSystemWatcher {
-                    glob_pattern: GlobPattern::String("**/*.py".to_string()),
-                    kind: None,
-                },
-                FileSystemWatcher {
-                    glob_pattern: GlobPattern::String("**/pyproject.toml".to_string()),
-                    kind: None,
-                },
-                FileSystemWatcher {
-                    glob_pattern: GlobPattern::String("**/alembic.ini".to_string()),
-                    kind: None,
-                },
-            ],
-        })
-        .ok();
-        if let Err(e) = self
-            .client
-            .register_capability(vec![Registration {
-                id: "watch-python-files".to_string(),
-                method: "workspace/didChangeWatchedFiles".to_string(),
-                register_options: reg_opts,
-            }])
-            .await
-        {
-            tracing::warn!("could not register file watcher: {e}");
+        // Register a file watcher only when the client supports dynamic registration.
+        if self.supports_dynamic_registration.load(Ordering::Relaxed) {
+            let reg_opts = serde_json::to_value(DidChangeWatchedFilesRegistrationOptions {
+                watchers: vec![
+                    FileSystemWatcher {
+                        glob_pattern: GlobPattern::String("**/*.py".to_string()),
+                        kind: None,
+                    },
+                    FileSystemWatcher {
+                        glob_pattern: GlobPattern::String("**/pyproject.toml".to_string()),
+                        kind: None,
+                    },
+                    FileSystemWatcher {
+                        glob_pattern: GlobPattern::String("**/alembic.ini".to_string()),
+                        kind: None,
+                    },
+                ],
+            })
+            .ok();
+            if let Err(e) = self
+                .client
+                .register_capability(vec![Registration {
+                    id: "watch-python-files".to_string(),
+                    method: "workspace/didChangeWatchedFiles".to_string(),
+                    register_options: reg_opts,
+                }])
+                .await
+            {
+                tracing::warn!("could not register file watcher: {e}");
+            }
         }
 
         // Kick off the background workspace scan after returning from `initialized`.
