@@ -28,6 +28,8 @@ pub struct SymbolTable {
     pub module_aliases: HashMap<String, String>,
     /// modules from `from M import *`
     pub star_imports: Vec<String>,
+    /// Type alias name → column args extracted from `X = Annotated[T, mapped_column(...)]`
+    pub annotated_column_args: HashMap<String, ColumnArgs>,
 }
 
 impl SymbolTable {
@@ -271,13 +273,73 @@ impl BaseRegistry {
     }
 }
 
+/// Scan module-level assignments for `X = Annotated[T, mapped_column(...)]` and populate
+/// `sym.annotated_column_args` so columns declared as `id: Mapped[X]` (no RHS) resolve
+/// their column metadata (primary_key, nullable, etc.) from the alias definition.
+fn collect_annotated_aliases(root: Node, source: &[u8], st: &mut SymbolTable) {
+    let mut c = root.walk();
+    for node in root.named_children(&mut c) {
+        let stmt = unwrap_expr_stmt(node);
+        if stmt.kind() != "assignment" {
+            continue;
+        }
+        if stmt.child_by_field_name("type").is_some() {
+            continue; // annotated assignment, not a type alias
+        }
+        let Some(left) = stmt.child_by_field_name("left") else {
+            continue;
+        };
+        if left.kind() != "identifier" {
+            continue;
+        }
+        let name = node_text(left, source).to_string();
+        let Some(right) = stmt.child_by_field_name("right") else {
+            continue;
+        };
+        // Fast text check before tree walk
+        let rhs_text = node_text(right, source);
+        if !rhs_text.starts_with("Annotated[") && !rhs_text.starts_with("Ann[") {
+            continue;
+        }
+        if let Some(mc_args) = find_mapped_column_call_in_subtree(right, source) {
+            let (col_args, _) = parse_mapped_column_args(&mc_args, source, st);
+            st.annotated_column_args.insert(name, col_args);
+        }
+    }
+}
+
+/// Depth-first search for a `mapped_column(...)` call anywhere in `node`'s subtree.
+/// Returns the `arguments` node of the first match, or `None`.
+fn find_mapped_column_call_in_subtree<'tree>(
+    node: Node<'tree>,
+    source: &[u8],
+) -> Option<Node<'tree>> {
+    if node.kind() == "call" {
+        let func_name = node
+            .child_by_field_name("function")
+            .map(|n| node_text(n, source))
+            .unwrap_or("");
+        if func_name == "mapped_column" {
+            return node.child_by_field_name("arguments");
+        }
+    }
+    let mut c = node.walk();
+    for child in node.named_children(&mut c) {
+        if let Some(result) = find_mapped_column_call_in_subtree(child, source) {
+            return Some(result);
+        }
+    }
+    None
+}
+
 // ── Main extraction entry point ───────────────────────────────────────────────
 
 pub fn extract_models(source: &str, tree: &Tree) -> Vec<Model> {
     let bytes = source.as_bytes();
     let root = tree.root_node();
 
-    let sym = build_symbol_table(root, bytes);
+    let mut sym = build_symbol_table(root, bytes);
+    collect_annotated_aliases(root, bytes, &mut sym);
 
     // First pass: collect declarative bases defined in this file
     let mut bases = BaseRegistry::default();
@@ -788,7 +850,23 @@ fn try_extract_column(assign: &Node, source: &[u8], sym: &SymbolTable) -> Option
                 (ColumnArgs::default(), None)
             }
         }
-        _ => (ColumnArgs::default(), None),
+        _ => {
+            // No RHS or non-call RHS: look for mapped_column metadata in the annotation itself
+            // (handles `id: Mapped[Annotated[T, mapped_column(...)]]` inline)
+            // or fall back to the type-alias table (handles `id: Mapped[UUIDPk]` where
+            // `UUIDPk = Annotated[T, mapped_column(...)]` is a module-level alias).
+            if let Some(mc_args) = find_mapped_column_call_in_subtree(annotation, source) {
+                parse_mapped_column_args(&mc_args, source, sym)
+            } else {
+                let inner = strip_mapped_wrapper(ann_text);
+                let alias_args = sym
+                    .annotated_column_args
+                    .get(inner.trim())
+                    .cloned()
+                    .unwrap_or_default();
+                (alias_args, None)
+            }
+        }
     };
 
     args.nullable = infer_nullable(&mapped_type, args.nullable);
@@ -1291,5 +1369,70 @@ class Post(Base):
         let tree = parse(src);
         let models = extract_models(src, &tree);
         assert!(models.is_empty());
+    }
+
+    // ── Annotated type alias resolution ──────────────────────────────────────
+
+    #[test]
+    fn pk_from_annotated_type_alias() {
+        let src = r#"
+from typing import Annotated
+from uuid import UUID
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+UUIDPk = Annotated[UUID, mapped_column(primary_key=True)]
+
+class Base(DeclarativeBase): pass
+
+class Address(Base):
+    __tablename__ = "addresses"
+    id: Mapped[UUIDPk]
+"#;
+        let tree = parse(src);
+        let models = extract_models(src, &tree);
+        assert_eq!(models.len(), 1);
+        let col = &models[0].columns["id"];
+        assert!(col.args.primary_key, "id should be detected as primary key via type alias");
+    }
+
+    #[test]
+    fn nullable_from_annotated_type_alias() {
+        let src = r#"
+from typing import Annotated
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy import String
+
+NullableStr = Annotated[str, mapped_column(String, nullable=True)]
+
+class Base(DeclarativeBase): pass
+
+class Item(Base):
+    __tablename__ = "items"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    note: Mapped[NullableStr]
+"#;
+        let tree = parse(src);
+        let models = extract_models(src, &tree);
+        let col = &models[0].columns["note"];
+        assert!(col.args.nullable, "nullable=True from alias should be respected");
+    }
+
+    #[test]
+    fn pk_from_inline_annotated_no_rhs() {
+        let src = r#"
+from typing import Annotated
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy import Integer
+
+class Base(DeclarativeBase): pass
+
+class Post(Base):
+    __tablename__ = "posts"
+    id: Mapped[Annotated[int, mapped_column(primary_key=True)]]
+"#;
+        let tree = parse(src);
+        let models = extract_models(src, &tree);
+        let col = &models[0].columns["id"];
+        assert!(col.args.primary_key, "primary_key from inline Annotated annotation");
     }
 }
