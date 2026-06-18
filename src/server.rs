@@ -594,8 +594,10 @@ async fn scan_workspace(
         run_pass1(uri, source, &state, &client).await;
     }
 
+    // Bump generation first so any editor Pass-2 tasks already queued (but scheduled
+    // before this scan's Pass-2 ran) are superseded.  Tasks queued *after* this bump
+    // have a higher target and will run as normal.
+    generation.fetch_add(1, Ordering::SeqCst);
     // Single Pass 2 after the full scan.
     run_pass2(&state, &client, supports_inlay_hint_refresh).await;
-    // Bump generation so any in-flight editor Pass 2 knows it's superseded.
-    generation.fetch_add(1, Ordering::SeqCst);
 }

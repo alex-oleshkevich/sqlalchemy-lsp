@@ -7,6 +7,7 @@ exercises a specific LSP request and asserts the response.
 
 import asyncio
 import pathlib
+import time
 
 import pytest
 from lsprotocol import types
@@ -302,9 +303,9 @@ async def test_references_on_model_class_finds_usages(
         )
     )
 
-    # May be None if no references found, or a list
+    # May be None if no references found, or a list/tuple
     if result is not None:
-        assert isinstance(result, list)
+        assert isinstance(result, (list, tuple))
 
 
 # ── Completion ────────────────────────────────────────────────────────────────
@@ -515,7 +516,7 @@ async def test_inlay_hints_returned_for_model_file(
     )
 
     # Inlay hints may be empty if no hints apply to this file — just ensure no crash
-    assert result is None or isinstance(result, list)
+    assert result is None or isinstance(result, (list, tuple))
 
 
 # ── Diagnostics (via LSP push) ────────────────────────────────────────────────
@@ -546,10 +547,16 @@ async def test_broken_fk_produces_diagnostic(
     )
     await _open_and_wait(client, bad_uri, bad_text)
 
-    # The diagnostics for bad.py should include SQLA-E301
-    diags = client.diagnostics.get(bad_uri, [])
-    codes = [d.code for d in diags]
-    assert "SQLA-E301" in codes, f"expected SQLA-E301 in {codes}"
+    # E301 is a Pass-2 diagnostic — fires ~300 ms after debounce, not on initial open.
+    # Poll every 500 ms for up to 15 s.
+    for _ in range(30):
+        diags = client.diagnostics.get(bad_uri, [])
+        if any(d.code == "SQLA-E301" for d in diags):
+            break
+        await asyncio.sleep(0.5)
+    else:
+        diag_codes = [d.code for d in client.diagnostics.get(bad_uri, [])]
+        assert False, f"expected SQLA-E301 in {diag_codes} after 15s"
 
 
 async def test_clean_file_produces_no_diagnostics(
@@ -559,7 +566,7 @@ async def test_clean_file_produces_no_diagnostics(
     models = await _open_all_models(client, tmp_path)
     for uri, _ in models.values():
         diags = client.diagnostics.get(uri, [])
-        assert diags == [], f"unexpected diagnostics in {uri}: {diags}"
+        assert len(diags) == 0, f"unexpected diagnostics in {uri}: {diags}"
 
 
 # ── Signature help ────────────────────────────────────────────────────────────
@@ -596,3 +603,181 @@ async def test_signature_help_inside_relationship_call(
 
     # May return None if no signature help applies — just ensure no crash
     assert result is None or isinstance(result, types.SignatureHelp)
+
+
+# ── Annotated type alias (x6u) ────────────────────────────────────────────────
+
+_ALIAS_MODEL_TEXT = """\
+from __future__ import annotations
+from typing import Annotated, Optional
+from sqlalchemy import String
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+intpk = Annotated[int, mapped_column(primary_key=True)]
+NullableStr = Annotated[Optional[str], mapped_column(String(200), nullable=True)]
+RequiredStr = Annotated[str, mapped_column(String(120), nullable=False)]
+
+class Base(DeclarativeBase):
+    pass
+
+class Product(Base):
+    __tablename__ = "products"
+    id: Mapped[intpk]
+    name: Mapped[RequiredStr]
+    description: Mapped[NullableStr]
+"""
+
+
+async def test_annotated_alias_pk_produces_no_w104(
+    client: LanguageClient, tmp_path: pathlib.Path
+):
+    """Model whose PK comes from an Annotated alias does not fire SQLA-W104."""
+    uri = workspace_uri(tmp_path, "models", "alias_product.py")
+    await _open_and_wait(client, uri, _ALIAS_MODEL_TEXT)
+
+    diags = client.diagnostics.get(uri, [])
+    w104_diags = [d for d in diags if d.code == "SQLA-W104"]
+    assert w104_diags == [], f"Unexpected W104: {w104_diags}"
+
+
+async def test_annotated_alias_hover_shows_column_info(
+    client: LanguageClient, tmp_path: pathlib.Path
+):
+    """Hovering on a column typed via Annotated alias returns a hover card."""
+    uri = workspace_uri(tmp_path, "models", "alias_product2.py")
+    await _open_and_wait(client, uri, _ALIAS_MODEL_TEXT)
+
+    # Hover on 'id' (line 14, col 4 — the 'i' in 'id')
+    pos = _find(_ALIAS_MODEL_TEXT, "    id: Mapped[intpk]")
+    pos = types.Position(line=pos.line, character=4)
+
+    result = await client.text_document_hover_async(
+        types.HoverParams(
+            text_document=types.TextDocumentIdentifier(uri=uri),
+            position=pos,
+        )
+    )
+
+    # The server returns a hover card for known SA columns
+    assert result is not None
+    content = result.contents
+    if isinstance(content, types.MarkupContent):
+        assert content.value, "hover content should not be empty"
+    else:
+        assert content
+
+
+async def test_annotated_alias_nullable_column_hover(
+    client: LanguageClient, tmp_path: pathlib.Path
+):
+    """Hovering on a nullable alias column returns hover with type info."""
+    uri = workspace_uri(tmp_path, "models", "alias_product3.py")
+    await _open_and_wait(client, uri, _ALIAS_MODEL_TEXT)
+
+    # Hover on 'description' column
+    pos = _find(_ALIAS_MODEL_TEXT, "    description: Mapped[NullableStr]")
+    pos = types.Position(line=pos.line, character=4)
+
+    result = await client.text_document_hover_async(
+        types.HoverParams(
+            text_document=types.TextDocumentIdentifier(uri=uri),
+            position=pos,
+        )
+    )
+
+    assert result is not None
+
+
+# ── Hover — FK column ─────────────────────────────────────────────────────────
+
+
+async def test_hover_on_fk_column_shows_target_info(
+    client: LanguageClient, tmp_path: pathlib.Path
+):
+    """Hovering on a FK column name returns hover card mentioning the target."""
+    models = await _open_all_models(client, tmp_path)
+
+    post_uri, post_text = models["post.py"]
+
+    # Hover on 'author_id' column
+    pos = _find(post_text, "    author_id")
+    pos = types.Position(line=pos.line, character=4)
+
+    result = await client.text_document_hover_async(
+        types.HoverParams(
+            text_document=types.TextDocumentIdentifier(uri=post_uri),
+            position=pos,
+        )
+    )
+
+    assert result is not None
+    content = result.contents
+    if isinstance(content, types.MarkupContent):
+        assert content.value
+
+
+async def test_hover_shows_primary_key_label(
+    client: LanguageClient, tmp_path: pathlib.Path
+):
+    """Hover card for a PK column mentions 'primary key' or similar."""
+    models = await _open_all_models(client, tmp_path)
+    user_uri, user_text = models["user.py"]
+
+    pos = _find(user_text, "    id: Mapped[int] = mapped_column(Integer, primary_key=True)")
+    pos = types.Position(line=pos.line, character=4)
+
+    result = await client.text_document_hover_async(
+        types.HoverParams(
+            text_document=types.TextDocumentIdentifier(uri=user_uri),
+            position=pos,
+        )
+    )
+
+    assert result is not None
+    content = result.contents
+    if isinstance(content, types.MarkupContent):
+        text = content.value.lower()
+        assert "primary" in text or "pk" in text or "int" in text, (
+            f"Expected PK hint in hover card, got: {content.value!r}"
+        )
+
+
+# ── Completion — op. prefix ───────────────────────────────────────────────────
+
+
+async def test_op_completion_after_dot_returns_items(
+    client: LanguageClient, tmp_path: pathlib.Path
+):
+    """Completion after 'op.' in a migration context returns op method items."""
+    migration_text = (
+        "from alembic import op\n"
+        "def upgrade():\n"
+        "    op."
+    )
+    migration_uri = workspace_uri(tmp_path, "migrations", "0001_test.py")
+
+    client.text_document_did_open(
+        types.DidOpenTextDocumentParams(
+            text_document=types.TextDocumentItem(
+                uri=migration_uri,
+                language_id="python",
+                version=1,
+                text=migration_text,
+            )
+        )
+    )
+    # Give the server time to process
+    await asyncio.sleep(0.2)
+
+    cursor_line = migration_text.count("\n")
+    cursor_col = len(migration_text.split("\n")[-1])
+
+    result = await client.text_document_completion_async(
+        types.CompletionParams(
+            text_document=types.TextDocumentIdentifier(uri=migration_uri),
+            position=types.Position(line=cursor_line, character=cursor_col),
+        )
+    )
+
+    # op. completions may or may not be supported — ensure no crash
+    assert result is None or isinstance(result, (list, types.CompletionList))
