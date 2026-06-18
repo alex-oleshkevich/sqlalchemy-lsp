@@ -2,7 +2,7 @@
 
 > **Status:** Draft
 >
-> **Version:** 0.3   ·   **Last updated:** 2026-06-18
+> **Version:** 0.4   ·   **Last updated:** 2026-06-18
 >
 > **Purpose:** Where the server's settings come from, how it finds your models and migrations when you say nothing, every config key it reads, the `SQLA-` diagnostic-code scheme, and how to silence a finding inline with `# noqa`.
 >
@@ -114,9 +114,14 @@ So `SQLA-W303` is the warning-by-default FK-type-mismatch rule in the foreign-ke
 
 The code never changes when you override a rule's severity. `SQLA-H205` stays `SQLA-H205` even after you bump it from a hint to a warning — the `H` records the *default*, not the current level. This is what lets you write `# noqa: SQLA-H205` and have it keep working regardless of how anyone re-levels the rule.
 
-**REQ-CFG-07 — Default-on policy and the two preview rules.**
+**REQ-CFG-07 — Default-on policy and the three off-by-default rules.**
 
-Every rule defaults **on** except two of the hardest heuristics: `SQLA-H416` (viewonly-write) and `SQLA-H602` (association-proxy-misconfigured), which default off because they false-positive too readily. These two are the **preview** rules — the `recommended` preset (the default for `diagnostics.select`, §5.8) turns on every rule *except* these. To enable a preview rule, name it explicitly in `diagnostics.select`, or opt into the whole catalog with the `all` preset.
+Every rule defaults **on** except three, recorded in [ADR-008](../decisions/ADR-008-default-off-missing-column-comment.md) (which amends [ADR-003](../decisions/ADR-003-comprehensive-lints-defaults.md)). The off-by-default set is `{SQLA-H416, SQLA-H602, SQLA-I207}`, and the three are off for two distinct reasons:
+
+- `SQLA-H416` (viewonly-write) and `SQLA-H602` (association-proxy-misconfigured) are off because they're shaky heuristics that false-positive too readily. These two are the **preview** rules — the "preview" label means *unproven heuristic*, and applies only to them.
+- `SQLA-I207` (missing-column-comment) is off because it's an opt-in style opinion that fires on nearly every column, so leaving it on would drown you in noise — even though its detection is exact, not heuristic. It is an opt-in style rule, not a preview rule.
+
+The `recommended` preset (the default for `diagnostics.select`, §5.8) turns on every rule *except* these three. To enable one, name it explicitly in `diagnostics.select`, or opt into the whole catalog with the `all` preset.
 
 **REQ-CFG-08 — Resolution order: select, then ignore, then severity.**
 
@@ -156,7 +161,7 @@ You rarely want to toggle rules one at a time. Because every code embeds a class
 
 `select`, `ignore`, and `severity` accept three kinds of target, from broadest to most specific:
 
-- A **preset** in `select` — one of `recommended`, `all`, or `none`. `recommended` (the default) turns on every rule except the two preview rules (REQ-CFG-07); `all` turns on the whole catalog including previews; `none` starts from an empty set you then build up with explicit codes or class tokens.
+- A **preset** in `select` — one of `recommended`, `all`, or `none`. `recommended` (the default) turns on every rule except the three off-by-default rules (REQ-CFG-07); `all` turns on the whole catalog including those three; `none` starts from an empty set you then build up with explicit codes or class tokens.
 - A **class token** — the severity letter dropped and the rule number replaced with `xx`, e.g. `SQLA-3xx` means "all foreign-key rules" and `SQLA-7xx` means "all Alembic rules." A class token in `select` enables the group, in `ignore` disables it, and in `severity` re-levels every rule in it.
 - A **specific code** — a single rule like `SQLA-W303`, exactly as before.
 
@@ -209,7 +214,7 @@ Everything downstream is generated from this registry, never hand-maintained alo
 - The class-token and preset expansion of §5.8 reads the registry to know which codes a token covers and which are on by default.
 - The published docs are generated from it too.
 
-This is what keeps the default-on policy honest: the registry is where `SQLA-H416` and `SQLA-H602` are marked as the two **preview** (off-by-default) rules (REQ-CFG-07), so the `recommended` preset, the catalogs, and the docs all report the same two without anyone keeping three lists in sync.
+This is what keeps the default-on policy honest: the registry is where `SQLA-H416`, `SQLA-H602`, and `SQLA-I207` are marked as the three **off-by-default** rules (REQ-CFG-07), so the `recommended` preset, the catalogs, and the docs all report the same three without anyone keeping three lists in sync.
 
 ## 6. Examples & Use Cases
 
@@ -282,7 +287,7 @@ The resolved config the server holds in memory has this shape. It is the single 
 - Conflicting keys across the two files → the highest-precedence source wins *per key*, so `sqlalchemy-lsp.toml` can override one `pyproject.toml` key while inheriting the rest (§5.1).
 - An unknown code in `select`/`ignore` → in the **server**, a config warning, never a hard failure; the rest of the config still resolves. In the **CLI**, exit 2 (REQ-CFG-08; [F14](../features/F14-cli-linter.md)).
 - A `# noqa: SQLA-H205` on a line that has no such finding → reported as `SQLA-W901 unused-noqa` (REQ-CFG-10).
-- An off-by-default rule (`SQLA-H416`/`SQLA-H602`) named in `ignore` but never in `select` → stays off; ignoring an already-off rule is a no-op, not an error.
+- An off-by-default rule (`SQLA-H416`/`SQLA-H602`/`SQLA-I207`) named in `ignore` but never in `select` → stays off; ignoring an already-off rule is a no-op, not an error.
 - `target_dialect` unset → dialect-sensitive rules like `SQLA-H206` stay silent rather than guessing a dialect (P4).
 - A class token and a specific code both target one rule (`select = ["SQLA-3xx"]`, `ignore = ["SQLA-W303"]`) → the specific code wins, so `SQLA-W303` stays off while the rest of `3xx` is on (REQ-CFG-12).
 - An unknown class token (`SQLA-8xx`, no such class) → handled like any unknown code: a server-side config warning, a CLI exit 2 (REQ-CFG-08, REQ-CFG-12).
@@ -302,7 +307,7 @@ Target: **100% of this spec's behavior is covered.** Every `REQ-CFG-NN` maps to 
 
 | Behavior / scenario | Type | Verifies |
 |---|---|---|
-| No config files → built-in defaults, all rules on except the two off-by-default | unit | REQ-CFG-01, REQ-CFG-07 |
+| No config files → built-in defaults, all rules on except the three off-by-default | unit | REQ-CFG-01, REQ-CFG-07 |
 | `sqlalchemy-lsp.toml` key overridden per-key by `pyproject.toml` | unit | REQ-CFG-01 |
 | `diagnostics.ignore` accumulates across both files; `severity` merges with higher source winning | unit | REQ-CFG-01 |
 | Empty `model_paths` → discovers `models/` and declarative-base files | unit | REQ-CFG-02 |
@@ -346,6 +351,7 @@ Target: **100% of this spec's behavior is covered.** Every `REQ-CFG-NN` maps to 
 
 ## 12. Changelog
 
+- **2026-06-18** — v0.4: per [ADR-008](../decisions/ADR-008-default-off-missing-column-comment.md) (amending [ADR-003](../decisions/ADR-003-comprehensive-lints-defaults.md)), the off-by-default set is now three rules; `SQLA-I207` (missing-column-comment) joins `SQLA-H416`/`SQLA-H602` (§5.5 REQ-CFG-07, §5.8, §5.10). The reasons differ: H416/H602 are off as shaky **preview** heuristics that false-positive, while I207 is off as an opt-in style rule that fires on nearly every column — its detection is exact, just noisy. The `recommended` preset now excludes all three; `all` still includes them.
 - **2026-06-18** — v0.3: added three capabilities adapted from Biome. Glob-scoped `overrides` (§5.9, REQ-CFG-13) layer `diagnostics` config on top of the base per file path. `select`/`ignore`/`severity` now accept **class tokens** (`SQLA-3xx`) and `select` accepts the **presets** `recommended` (new default), `all`, and `none`, with specificity code > class > preset (§5.8, REQ-CFG-12); the default `diagnostics.select` changed from `["all"]` to `["recommended"]`. Added a single authoritative **code registry** as the source of truth from which the F01/F02/F13 catalogs and docs are generated (§5.10, REQ-CFG-14), referencing the `FixKind`/tag model in [E16](E16-conventions.md); `SQLA-H416`/`SQLA-H602` are now framed as the two "preview" off-by-default rules. The §5.5 code scheme and §5.6 `# noqa` rules are unchanged.
 - **2026-06-18** — v0.2: removed the `naming_convention` config key. The naming convention is now read **only from the resolved declarative base's `MetaData`** in code ([E30](E30-extraction-and-indexing.md)); `SQLA-H106`/`SQLA-H107` and the F11 scaffold no longer consult config. Trade-off: a project that sets its convention in Alembic's `env.py` rather than on the base is no longer seen, so `SQLA-H107` may false-positive there — disable the rule or use `# noqa` (see [F02](../features/F02-best-practice-lints.md) §10).
 - **2026-06-17** — Initial draft: three-source per-key config, model/Alembic auto-discovery, the key reference, the `SQLA-<SEV><CLASS><NN>` scheme with default-on policy, `# noqa` suppression and the `SQLA-W901` meta-finding, and config-watch re-resolution.

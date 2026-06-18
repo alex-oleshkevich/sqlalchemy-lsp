@@ -2,9 +2,9 @@
 
 > **Status:** Draft
 >
-> **Version:** 0.3   ·   **Last updated:** 2026-06-18
+> **Version:** 0.4   ·   **Last updated:** 2026-06-18
 >
-> **Purpose:** The configurable best-practice lint set — the rules that flag SQLAlchemy code that *works* but invites a bug, a deprecation, or a maintenance headache. Every rule ships on by default except two of the hardest heuristics.
+> **Purpose:** The configurable best-practice lint set — the rules that flag SQLAlchemy code that *works* but invites a bug, a deprecation, or a maintenance headache. Every rule ships on by default except three: two of the hardest heuristics, and one opt-in style rule.
 >
 > **Depends on:** [constitution](../constitution.md), [E07-data-model](../foundations/E07-data-model.md), [E30-extraction-and-indexing](../foundations/E30-extraction-and-indexing.md), [E16-conventions](../foundations/E16-conventions.md), [E15-app-config](../foundations/E15-app-config.md)   ·   **Related:** [F01-orm-correctness-diagnostics](F01-orm-correctness-diagnostics.md), [F11-code-actions](F11-code-actions.md), [E17-testing](../foundations/E17-testing.md), [E29-e2e-testing](../foundations/E29-e2e-testing.md)
 
@@ -22,7 +22,7 @@ This spec covers:
 
 - The 27 best-practice lint rules, grouped by diagnostic class (structure, columns, foreign keys, relationships, modernization, ORM extensions).
 - For each rule: its `SQLA-` code, default severity, default on/off state, what triggers it, the message it emits, an example, and detectability notes.
-- The default-on-except-two policy and how each rule is configured or suppressed.
+- The default-on-except-three policy and how each rule is configured or suppressed.
 - The test plan and end-to-end journeys that prove every rule fires exactly where it should.
 
 ## 2. Non-Goals / Out of Scope
@@ -40,7 +40,7 @@ The legacy SQLAlchemy LSP shipped a solid *correctness* core but stopped there. 
 
 Each rule earns its place by catching a real, recurring mistake. A `default=[]` shared across every row. A `relationship` with two candidate foreign keys and no `foreign_keys=` to disambiguate. A `Column(String)` with no length on a dialect that requires one. None of these is a syntax error; all of them are bugs waiting for the right input.
 
-> **Why default-on, with two exceptions.** [ADR-003](../decisions/ADR-003-comprehensive-lints-defaults.md) decided that best-practice lints are most useful when they're *on* — a lint you have to discover and enable is a lint nobody runs. So every rule defaults on, and you turn off the ones your team has decided against. The two exceptions, `SQLA-H416` and `SQLA-H602`, are the hardest heuristics: they false-positive too readily to inflict on every project by default, so they ship off and you opt in. The policy and its rationale live in [E15 REQ-CFG-07](../foundations/E15-app-config.md#55-the-diagnostic-code-scheme) and [ADR-003](../decisions/ADR-003-comprehensive-lints-defaults.md).
+> **Why default-on, with three exceptions.** [ADR-003](../decisions/ADR-003-comprehensive-lints-defaults.md) decided that best-practice lints are most useful when they're *on* — a lint you have to discover and enable is a lint nobody runs. So every rule defaults on, and you turn off the ones your team has decided against. There are three exceptions, off for two different reasons. Two are the hardest heuristics: `SQLA-H416` and `SQLA-H602` false-positive too readily to inflict on every project, so they ship off and you opt in. The third, `SQLA-I207`, is detected exactly — but requiring a `comment=` on every column is an opt-in style opinion that would fire on nearly every column of a typical schema, so it ships off as noise, not because the detection is shaky ([ADR-008](../decisions/ADR-008-default-off-missing-column-comment.md)). The policy and its rationale live in [E15 REQ-CFG-07](../foundations/E15-app-config.md#55-the-diagnostic-code-scheme), [ADR-003](../decisions/ADR-003-comprehensive-lints-defaults.md), and [ADR-008](../decisions/ADR-008-default-off-missing-column-comment.md).
 
 ## 4. Concepts & Definitions
 
@@ -58,13 +58,13 @@ This is the rule catalog. Each rule is a load-bearing requirement (`REQ-LINT-NN`
 
 Two conventions run throughout. Every rule is **suppressible** with `# noqa: SQLA-<code>` and **configurable** in [E15](../foundations/E15-app-config.md) — stated once here, not repeated per rule. And every rule fires only on the *resolved* facts from [E07](../foundations/E07-data-model.md)/[E30](../foundations/E30-extraction-and-indexing.md): when a fact is `Unknown` or a reference is unresolvable, the rule stays silent rather than guessing (constitution P4).
 
-### 5.1 The default-on-except-two policy
+### 5.1 The default-on-except-three policy
 
-Before the rules, the policy that frames them. Every rule below defaults **on** — it fires unless you turn it off — except `SQLA-H416` (viewonly-write) and `SQLA-H602` (association-proxy-misconfigured), which default **off** and must be named in `diagnostics.select` to enable.
+Before the rules, the policy that frames them. Every rule below defaults **on** — it fires unless you turn it off — except three: `SQLA-H416` (viewonly-write), `SQLA-H602` (association-proxy-misconfigured), and `SQLA-I207` (missing-column-comment), which default **off** and must be named in `diagnostics.select` to enable.
 
-**REQ-LINT-01 — Every F02 rule defaults on except `SQLA-H416` and `SQLA-H602`.**
+**REQ-LINT-01 — Every F02 rule defaults on except `SQLA-H416`, `SQLA-H602`, and `SQLA-I207`.**
 
-The server enables all 27 F02 rules out of the box, so a project with no config still gets the full best-practice review. The two off-by-default rules are the hardest heuristics — they read intent the syntax tree only hints at, so they false-positive often enough to annoy. They ship off and you opt in.
+The server enables 24 of the 27 F02 rules out of the box, so a project with no config still gets the bulk of the best-practice review. Three ship off, for two distinct reasons. `SQLA-H416` and `SQLA-H602` are the hardest heuristics — they read intent the syntax tree only hints at, so they false-positive often enough to annoy ([ADR-003](../decisions/ADR-003-comprehensive-lints-defaults.md)). `SQLA-I207` is detected exactly, but firing on nearly every column of a typical schema makes it pure noise unless a team opts in to documenting every column ([ADR-008](../decisions/ADR-008-default-off-missing-column-comment.md)). All three ship off and you opt in.
 
 To turn a default-on rule off, name it in `diagnostics.ignore`. To turn an off-by-default rule on, name it in `diagnostics.select`. To re-level any rule, set `diagnostics.severity` — the code stays stable. The resolution order and these keys are owned by [E15 REQ-CFG-07](../foundations/E15-app-config.md#55-the-diagnostic-code-scheme) and [REQ-CFG-08](../foundations/E15-app-config.md#55-the-diagnostic-code-scheme).
 
@@ -219,10 +219,11 @@ These rules sit alongside F01's `SQLA-W201` nullable-not-optional (owned by [F01
 
 - **Detectability:** medium, and **dialect-gated**. It reads the `SqlType { name: "String", args }` and fires only when `args` is empty *and* `target_dialect` ([E15](../foundations/E15-app-config.md#54-the-key-reference)) names a length-requiring dialect. When `target_dialect` is unset, the rule stays silent rather than assume a backend (constitution P4; [E15 §9](../foundations/E15-app-config.md#9-edge-cases--failure-modes)). No F11 quick-fix (the length is the user's call).
 
-**REQ-LINT-10 — `SQLA-I207` missing-column-comment.**
+**REQ-LINT-10 — `SQLA-I207` missing-column-comment *(default OFF)*.**
 
-- **Default:** info · **on**.
+- **Default:** info · **off** — opt in via `diagnostics.select`.
 - **Triggers when** a column has no `comment=` argument. A column comment lands in the database schema and in generated docs, so a team that documents its schema wants every column to carry one. This is the gentlest rule — info severity — because many projects legitimately skip comments.
+- **Off by default** because it fires on nearly every column of an existing schema. That's noise from an opt-in style opinion, not a heuristic problem — the detection is trivial and exact. Opt in by naming `SQLA-I207` in `diagnostics.select`, or enable the `all` preset, when your team commits to documenting every column ([ADR-008](../decisions/ADR-008-default-off-missing-column-comment.md)).
 - **Message:** `column \`email\` has no comment; add comment= to document it in the schema`.
 - **Example.**
 
@@ -235,7 +236,7 @@ These rules sit alongside F01's `SQLA-W201` nullable-not-optional (owned by [F01
       String(255), unique=True, comment="Login email, unique per account")
   ```
 
-- **Detectability:** high. It reads whether `comment=` is present on the `mapped_column`. Info severity means most teams will either accept the noise or `ignore` it wholesale ([E15](../foundations/E15-app-config.md)) — that's expected. No F11 quick-fix (the comment text is the user's to write).
+- **Detectability:** high. It reads whether `comment=` is present on the `mapped_column` — a trivial, exact check. The rule is off by default for noise, not detectability ([ADR-008](../decisions/ADR-008-default-off-missing-column-comment.md)); when a team opts in, it fires reliably on every uncommented column. No F11 quick-fix (the comment text is the user's to write).
 
 ### 5.4 Foreign keys (`SQLA-3xx`)
 
@@ -572,7 +573,7 @@ These three rules cover the SQLAlchemy extension constructs — hybrid propertie
 
 ## 6. Visualizations
 
-The 27 F02 rules at a glance, by class — their code, default severity, default state, and whether [F11](F11-code-actions.md) ships a quick-fix. The two off-by-default rows are the hardest heuristics ([ADR-003](../decisions/ADR-003-comprehensive-lints-defaults.md)).
+The 27 F02 rules at a glance, by class — their code, default severity, default state, and whether [F11](F11-code-actions.md) ships a quick-fix. Three rows are off by default. Two — `SQLA-H416` and `SQLA-H602` — are the hardest heuristics ([ADR-003](../decisions/ADR-003-comprehensive-lints-defaults.md)); the third, `SQLA-I207`, is off for noise/opinion rather than detectability, so its detectability column stays `high` ([ADR-008](../decisions/ADR-008-default-off-missing-column-comment.md)).
 
 | Code | Rule | Sev | Default | Quick-fix? | Detectability |
 |---|---|---|---|---|---|
@@ -584,7 +585,7 @@ The 27 F02 rules at a glance, by class — their code, default severity, default
 | `SQLA-W204` | default-and-server-default | W | on | — | high |
 | `SQLA-H205` | naive-datetime | H | on | ✅ | medium |
 | `SQLA-H206` | unbounded-string | H | on (dialect-gated) | — | medium |
-| `SQLA-I207` | missing-column-comment | I | on | — | high |
+| `SQLA-I207` | missing-column-comment | I | **off** | — | high |
 | `SQLA-W304` | ambiguous-foreign-keys | W | on | ✅ | heuristic |
 | `SQLA-W305` | composite-fk-no-foreign-keys | W | on | ✅ | heuristic |
 | `SQLA-W411` | missing-remote-side | W | on | — | medium |
@@ -634,7 +635,7 @@ Now `SQLA-H414`/`H415` stop firing entirely, and `SQLA-H205` reports at error se
 
 - **Unresolvable fact → silence.** Any rule whose trigger depends on a resolved type, base, or cross-file model stays silent when that fact is `Unknown` or unresolved — never a guess (constitution P4; [E07 §10](../foundations/E07-data-model.md#10-edge-cases--failure-modes)).
 - **Dialect unset → `SQLA-H206` silent.** With no `target_dialect`, the dialect-gated rule never fires, even on a bare `String()` ([E15 §9](../foundations/E15-app-config.md#9-edge-cases--failure-modes)).
-- **Off-by-default rule in `ignore` but never `select` → no-op.** Ignoring `SQLA-H416`/`SQLA-H602` while they're already off is harmless, not an error ([E15 §9](../foundations/E15-app-config.md#9-edge-cases--failure-modes)).
+- **Off-by-default rule in `ignore` but never `select` → no-op.** Ignoring `SQLA-H416`/`SQLA-H602`/`SQLA-I207` while they're already off is harmless, not an error ([E15 §9](../foundations/E15-app-config.md#9-edge-cases--failure-modes)).
 - **W413 vs F01's W404 overlap.** When `uselist=` *explicitly* contradicts the annotation, F01's `SQLA-W404` owns it; F02's `SQLA-W413` fires only on the softer annotation-should-be-a-collection case. The two never double-report the same site.
 - **H106 silenced by a naming convention.** When the resolved base sets a `naming_convention` that names the constraint shape, `SQLA-H106` (unnamed-constraint) stays silent — the convention names it automatically.
 - **Convention configured in Alembic `env.py` → `SQLA-H106`/`SQLA-H107` false-positive.** We read the `naming_convention` only from the resolved base's `MetaData` in code (v0.2; the config key was dropped). A project that sets its convention in `env.py` instead is not seen, so both rules may fire incorrectly. The escape hatch is to disable the rule (`diagnostics.ignore`) or `# noqa` it. Tracked as OQ-LINT-2 (§15).
@@ -657,7 +658,7 @@ Each row is one rule (or behavior) under test, asserting the exact `SQLA-` code 
 
 | Behavior / scenario | Type | Fixtures | Verifies |
 |---|---|---|---|
-| All 27 rules on by default; `SQLA-H416`/`H602` off | unit | [clean-blog](../foundations/E17-testing.md#clean-blog) | REQ-LINT-01 |
+| All 27 rules on by default; `SQLA-H416`/`H602`/`I207` off | unit | [clean-blog](../foundations/E17-testing.md#clean-blog) | REQ-LINT-01 |
 | Missing primary key fires `SQLA-W104` | unit | [missing-primary-key](../foundations/E17-testing.md#missing-primary-key) | REQ-LINT-02 |
 | Bare constraint with no convention fires `SQLA-H106` | unit | [unnamed-constraint](../foundations/E17-testing.md#unnamed-constraint) | REQ-LINT-03 |
 | Resolved base with no convention fires `SQLA-H107` once | unit | [no-naming-convention](../foundations/E17-testing.md#no-naming-convention) | REQ-LINT-04 |
@@ -666,7 +667,7 @@ Each row is one rule (or behavior) under test, asserting the exact `SQLA-` code 
 | Both `default` and `server_default` fire `SQLA-W204` | unit | `#default-and-server-default` | REQ-LINT-07 |
 | Naive `DateTime` fires `SQLA-H205` | unit | [naive-datetime](../foundations/E17-testing.md#naive-datetime) | REQ-LINT-08 |
 | Bare `String()` fires `SQLA-H206` only when dialect set; silent when unset | unit | [unbounded-string](../foundations/E17-testing.md#unbounded-string) | REQ-LINT-09 |
-| Column with no `comment=` fires `SQLA-I207` | unit | `#missing-column-comment` | REQ-LINT-10 |
+| Column with no `comment=` fires `SQLA-I207` only when enabled | unit | `#missing-column-comment` | REQ-LINT-10 |
 | Two FKs to one target + no `foreign_keys=` fires `SQLA-W304` | integration | [ambiguous-foreign-keys](../foundations/E17-testing.md#ambiguous-foreign-keys) | REQ-LINT-11 |
 | Composite FK + no `foreign_keys=` fires `SQLA-W305` | integration | `#composite-fk-no-foreign-keys` | REQ-LINT-12 |
 | Self-ref relationship with no `remote_side=` fires `SQLA-W411` | unit | `#missing-remote-side` | REQ-LINT-13 |
@@ -698,7 +699,7 @@ Every load-bearing requirement maps to a test — this table is the proof.
 
 | Requirement | Covered by |
 |---|---|
-| REQ-LINT-01 | default-on-except-two policy test |
+| REQ-LINT-01 | default-on-except-three policy test |
 | REQ-LINT-02 | `SQLA-W104` missing-primary-key test |
 | REQ-LINT-03 | `SQLA-H106` unnamed-constraint test |
 | REQ-LINT-04 | `SQLA-H107` no-naming-convention test |
@@ -707,7 +708,7 @@ Every load-bearing requirement maps to a test — this table is the proof.
 | REQ-LINT-07 | `SQLA-W204` default-and-server-default test |
 | REQ-LINT-08 | `SQLA-H205` naive-datetime test |
 | REQ-LINT-09 | `SQLA-H206` dialect-gated unbounded-string test |
-| REQ-LINT-10 | `SQLA-I207` missing-column-comment test |
+| REQ-LINT-10 | `SQLA-I207` missing-column-comment opt-in test |
 | REQ-LINT-11 | `SQLA-W304` ambiguous-foreign-keys test |
 | REQ-LINT-12 | `SQLA-W305` composite-fk-no-foreign-keys test |
 | REQ-LINT-13 | `SQLA-W411` missing-remote-side test |
@@ -740,8 +741,8 @@ Driven by `pytest-lsp` over stdio against the built binary, these journeys prove
 |---|---|---|---|
 | E2E-01 | Open `clean-blog` | happy | Zero F02 findings published |
 | E2E-02 | Open each default-on lint fixture | happy | Each publishes exactly its expected `SQLA-` code at the right range |
-| E2E-03 | Open the `SQLA-H416` / `SQLA-H602` fixtures with defaults | happy | No finding — both ship off |
-| E2E-04 | Same two fixtures with the codes in `diagnostics.select` | happy | Each now publishes its code |
+| E2E-03 | Open the `SQLA-H416` / `SQLA-H602` / `SQLA-I207` fixtures with defaults | happy | No finding — all three ship off |
+| E2E-04 | Same three fixtures with the codes in `diagnostics.select` | happy | Each now publishes its code |
 | E2E-05 | Open the `SQLA-H206` fixture with no `target_dialect` | error | No finding — dialect-gated rule stays silent |
 | E2E-06 | Same fixture with `target_dialect = "mysql"` | happy | `SQLA-H206` published |
 | E2E-07 | A lint code listed in `diagnostics.ignore` | happy | That code no longer published; others unaffected |
@@ -790,16 +791,17 @@ Accessibility (§13.2) is N/A — F02 is a pure-data diagnostics feature with no
 
 - **OQ-LINT-1** — `SQLA-H414`/`H415` (lazy-loading strategy) encode a performance *opinion*, not a fact. Should they ship at `info` rather than `hint`, or be grouped under a single toggle so a team can disable all loading-strategy hints at once? Deferred; the per-rule `ignore` already covers the common case.
 - **OQ-LINT-2** — `SQLA-H106`/`SQLA-H107` read the `naming_convention` only from the resolved base's `MetaData` in code (the config key was dropped in v0.2). A project that configures its convention in Alembic's `env.py` is not seen and gets a false positive. Should the extractor learn to read a convention from `env.py`, or is the `ignore`/`# noqa` escape hatch enough? Deferred — most 2.0 projects set the convention on the base.
-- **Resolved — default-on-except-two.** Whether best-practice lints default on was settled by [ADR-003](../decisions/ADR-003-comprehensive-lints-defaults.md): on, except `SQLA-H416` and `SQLA-H602`.
+- **Resolved — default-on-except-three.** Whether best-practice lints default on was settled by [ADR-003](../decisions/ADR-003-comprehensive-lints-defaults.md): on, except the two hardest heuristics `SQLA-H416` and `SQLA-H602`. [ADR-008](../decisions/ADR-008-default-off-missing-column-comment.md) later added `SQLA-I207` to the off-by-default set — off for noise/opinion, not heuristic instability — making it three.
 - **Resolved — F01/F02 split.** Correctness diagnostics (`SQLA-1xx`–`4xx` core) live in [F01](F01-orm-correctness-diagnostics.md); best-practice lints live here. The two never duplicate a code, and overlapping cases (W413 vs W404) have a clear owner (§10).
 
 ## 16. Cross-References
 
 - **Depends on:** [constitution](../constitution.md) — P4 (silence on unresolvable input) and P5 (companion to the Python LSP) govern when a lint may fire; [E07-data-model](../foundations/E07-data-model.md) — the `Column`/`Relationship`/`MappedType` facts every rule reads; [E30-extraction-and-indexing](../foundations/E30-extraction-and-indexing.md) — resolves the base + `MetaData` (`SQLA-H107`), `Annotated` columns, and forward refs the rules depend on; [E16-conventions](../foundations/E16-conventions.md) — the error/resilience contract a rule obeys; [E15-app-config](../foundations/E15-app-config.md) — the `select`/`ignore`/`severity` keys, `target_dialect` gating, and `# noqa` suppression that toggle every rule.
-- **Related:** [F01-orm-correctness-diagnostics](F01-orm-correctness-diagnostics.md) — the correctness core this spec sits beside and cross-references but never duplicates; [F11-code-actions](F11-code-actions.md) — the quick-fixes that repair the fixable lints (byte-identical to `check --fix`); [E17-testing](../foundations/E17-testing.md) — the per-code fixtures registry and the CLI/server parity rule; [E29-e2e-testing](../foundations/E29-e2e-testing.md) — the harness and shared protocol-conformance journeys; [ADR-003](../decisions/ADR-003-comprehensive-lints-defaults.md) — the default-on-except-two decision.
+- **Related:** [F01-orm-correctness-diagnostics](F01-orm-correctness-diagnostics.md) — the correctness core this spec sits beside and cross-references but never duplicates; [F11-code-actions](F11-code-actions.md) — the quick-fixes that repair the fixable lints (byte-identical to `check --fix`); [E17-testing](../foundations/E17-testing.md) — the per-code fixtures registry and the CLI/server parity rule; [E29-e2e-testing](../foundations/E29-e2e-testing.md) — the harness and shared protocol-conformance journeys; [ADR-003](../decisions/ADR-003-comprehensive-lints-defaults.md) — the default-on-except-three decision, as amended by [ADR-008](../decisions/ADR-008-default-off-missing-column-comment.md) — `SQLA-I207` off by default for noise/opinion.
 
 ## 17. Changelog
 
+- **2026-06-18** — v0.4: `SQLA-I207` (missing-column-comment) now ships off by default ([ADR-008](../decisions/ADR-008-default-off-missing-column-comment.md)) — off for noise/opinion, not heuristic instability; reframed the default-off set from two rules to three.
 - **2026-06-18** — v0.3: The three modernization rules `SQLA-W501` (legacy-backref), `SQLA-W502` (legacy-declarative-base), and `SQLA-I503` (legacy-query-api) now carry the LSP `Deprecated` diagnostic tag ([E16](../foundations/E16-conventions.md)), so editors render them struck through. Added REQ-LINT-19b and the three per-rule **Tag** notes (§5.6), an E2E scenario (E2E-15) and acceptance criterion (AC-10) asserting the published diagnostic includes the tag.
 - **2026-06-18** — v0.2: `SQLA-H106`/`SQLA-H107` now read the `naming_convention` **only from the resolved base's `MetaData`** in code; the `naming_convention` config key was dropped from [E15](../foundations/E15-app-config.md). Added the `env.py`-configured-convention false-positive edge case (§10) and OQ-LINT-2 (§15).
 - **2026-06-17** — Initial draft. Specified the 27 best-practice lints across structure (`SQLA-W104`/`H106`/`H107`), columns & types (`H202`/`W203`/`W204`/`H205`/`H206`/`I207`), foreign keys (`W304`/`W305`), relationships (`W411`/`H412`/`W413`/`H414`/`H415`/`H416`), modernization (`W501`/`W502`/`I503`/`W504`/`I505`/`I506`), and ORM extensions (`H601`/`H602`/`H603`), each with a `REQ-LINT-NN`, default severity/state, trigger, message, example, and detectability notes. Recorded the default-on-except-two policy ([ADR-003](../decisions/ADR-003-comprehensive-lints-defaults.md)), the F01 cross-reference boundary, the per-rule test plan with §11.4 coverage, and the end-to-end journeys including config override, `# noqa` suppression, and CLI/server parity.

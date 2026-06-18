@@ -75,6 +75,7 @@
 | [ADR-005](decisions/ADR-005-stdio-only-transport.md) | stdio-only transport for v1 | 2026-06-17 | ✅ |
 | [ADR-006](decisions/ADR-006-debounce-and-generation-counter.md) | Debounce + generation counter | 2026-06-17 | ✅ |
 | [ADR-007](decisions/ADR-007-companion-to-python-lsp.md) | Companion to a Python LSP, not a replacement | 2026-06-17 | ✅ |
+| [ADR-008](decisions/ADR-008-default-off-missing-column-comment.md) | `SQLA-I207` ships off by default (amends ADR-003) | 2026-06-18 | ✅ |
 
 ## Deprecated
 
@@ -98,5 +99,6 @@ When you author or change a spec, update its row here in the same edit. When a s
 
 ## Changelog
 
+- **2026-06-18** — `SQLA-I207` (missing-column-comment) now ships **off by default** ([ADR-008](decisions/ADR-008-default-off-missing-column-comment.md), amending ADR-003): the off-by-default set is now three rules (`H416`/`H602` as shaky heuristics, `I207` as opt-in style). Propagated through `F02` (v0.4) and `E15` (v0.4).
 - **2026-06-18** — Suite refinements: dropped the `naming_convention` config key (read from code); generalized alias resolution in `E30` (+ alias test matrix/fixtures in `E17`); adapted seven patterns from Biome — safe/unsafe fixes (`F11`/`F14`), single-traversal diagnostics engine + lazy code-action resolve (`E01`), the diagnostic model with structured advices, tags, and `FixKind` (`E16`), config `overrides`/group-tokens/presets + central code registry (`E15`), and `Deprecated` LSP tags on modernization lints (`F02`). Version bumps across E01/E15/E16/E17/E30 and F01/F02/F11/F14.
 - **2026-06-17** — Initial index: meta + product approved; foundations (incl. appended `E30`), 16 features, and 7 ADRs registered as Draft.
