@@ -1,0 +1,159 @@
+name: Release
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (e.g. v0.1.0)"
+        required: true
+
+jobs:
+  version-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Tag matches Cargo.toml
+        env:
+          DISPATCH_TAG: ${{ github.event.inputs.tag }}
+        run: |
+          ref="${DISPATCH_TAG:-$GITHUB_REF_NAME}"
+          tag="${ref#v}"
+          crate=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
+          test "$tag" = "$crate" || { echo "tag $tag != Cargo.toml $crate"; exit 1; }
+
+  build:
+    needs: version-check
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: x86_64-unknown-linux-gnu,  os: ubuntu-latest,  name: linux-x86_64 }
+          - { target: aarch64-unknown-linux-gnu, os: ubuntu-latest,  name: linux-aarch64, cross: true }
+          - { target: x86_64-apple-darwin,       os: macos-latest,   name: macos-x86_64 }
+          - { target: aarch64-apple-darwin,      os: macos-latest,   name: macos-aarch64 }
+          - { target: x86_64-pc-windows-msvc,    os: windows-latest, name: windows-x86_64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Build (cross)
+        if: ${{ matrix.cross == true }}
+        env:
+          BUILD_TARGET: ${{ matrix.target }}
+        run: cargo install cross --locked && cross build --release --target "$BUILD_TARGET"
+      - name: Build
+        if: ${{ matrix.cross != true }}
+        env:
+          BUILD_TARGET: ${{ matrix.target }}
+        run: cargo build --release --target "$BUILD_TARGET"
+      - name: Strip and rename (Linux)
+        if: ${{ matrix.os == 'ubuntu-latest' }}
+        env:
+          BUILD_TARGET: ${{ matrix.target }}
+          ARTIFACT_NAME: ${{ matrix.name }}
+        run: |
+          strip "target/${BUILD_TARGET}/release/sqlalchemy-lsp"
+          cp "target/${BUILD_TARGET}/release/sqlalchemy-lsp" "sqlalchemy-lsp-${ARTIFACT_NAME}"
+          sha256sum "sqlalchemy-lsp-${ARTIFACT_NAME}" > "sqlalchemy-lsp-${ARTIFACT_NAME}.sha256"
+      - name: Strip and rename (macOS)
+        if: ${{ matrix.os == 'macos-latest' }}
+        env:
+          BUILD_TARGET: ${{ matrix.target }}
+          ARTIFACT_NAME: ${{ matrix.name }}
+        run: |
+          strip "target/${BUILD_TARGET}/release/sqlalchemy-lsp"
+          cp "target/${BUILD_TARGET}/release/sqlalchemy-lsp" "sqlalchemy-lsp-${ARTIFACT_NAME}"
+          shasum -a 256 "sqlalchemy-lsp-${ARTIFACT_NAME}" > "sqlalchemy-lsp-${ARTIFACT_NAME}.sha256"
+      - name: Rename (Windows)
+        if: ${{ matrix.os == 'windows-latest' }}
+        env:
+          BUILD_TARGET: ${{ matrix.target }}
+          ARTIFACT_NAME: ${{ matrix.name }}
+        shell: pwsh
+        run: |
+          Copy-Item "target\$env:BUILD_TARGET\release\sqlalchemy-lsp.exe" "sqlalchemy-lsp-$env:ARTIFACT_NAME.exe"
+          $hash = (Get-FileHash "sqlalchemy-lsp-$env:ARTIFACT_NAME.exe" -Algorithm SHA256).Hash.ToLower()
+          "$hash  sqlalchemy-lsp-$env:ARTIFACT_NAME.exe" | Out-File -Encoding ascii "sqlalchemy-lsp-$env:ARTIFACT_NAME.exe.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: sqlalchemy-lsp-${{ matrix.name }}*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Package Zed extension
+        run: ./scripts/package-zed-extension.sh dist/
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/**
+          generate_release_notes: true
+
+  publish-aur:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publish to AUR
+        if: env.AUR_SSH_KEY != ''
+        env:
+          AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
+          GH_REPO: ${{ github.repository }}
+          GH_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          VERSION="${GH_TAG#v}"
+          X86_URL="https://github.com/${GH_REPO}/releases/download/v${VERSION}/sqlalchemy-lsp-linux-x86_64"
+          AARCH64_URL="https://github.com/${GH_REPO}/releases/download/v${VERSION}/sqlalchemy-lsp-linux-aarch64"
+          X86_SUM=$(curl -sL "$X86_URL" | sha256sum | cut -d' ' -f1)
+          AARCH64_SUM=$(curl -sL "$AARCH64_URL" | sha256sum | cut -d' ' -f1)
+          sed -i "s/^pkgver=.*/pkgver=${VERSION}/" pkg/aur/PKGBUILD
+          sed -i "s/^sha256sums_x86_64=.*/sha256sums_x86_64=('${X86_SUM}')/" pkg/aur/PKGBUILD
+          sed -i "s/^sha256sums_aarch64=.*/sha256sums_aarch64=('${AARCH64_SUM}')/" pkg/aur/PKGBUILD
+          mkdir -p ~/.ssh
+          printf '%s\n' "$AUR_SSH_KEY" > ~/.ssh/aur
+          chmod 600 ~/.ssh/aur
+          ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
+          git config user.email "alex.oleshkevich@gmail.com"
+          git config user.name "Alex Oleshkevich"
+          cd pkg/aur
+          makepkg --printsrcinfo > .SRCINFO
+          git init
+          git add PKGBUILD .SRCINFO
+          git commit -m "Update to ${VERSION}"
+          GIT_SSH_COMMAND="ssh -i ~/.ssh/aur" git push ssh://aur@aur.archlinux.org/sqlalchemy-lsp.git HEAD:master
+
+  publish-homebrew:
+    needs: release
+    runs-on: macos-latest
+    steps:
+      - name: Bump Homebrew formula
+        if: env.HOMEBREW_GITHUB_TOKEN != ''
+        env:
+          HOMEBREW_GITHUB_TOKEN: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          GH_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          VERSION="${GH_TAG#v}"
+          CHECKSUM=$(curl -sL \
+            "https://github.com/${GH_REPO}/releases/download/${GH_TAG}/sqlalchemy-lsp-macos-aarch64" \
+            | shasum -a 256 | cut -d' ' -f1)
+          brew tap alex-oleshkevich/tap https://github.com/alex-oleshkevich/homebrew-tap
+          brew bump-formula-pr \
+            --version "${VERSION}" \
+            --url "https://github.com/${GH_REPO}/releases/download/${GH_TAG}/sqlalchemy-lsp-macos-aarch64" \
+            --sha256 "${CHECKSUM}" --no-audit --no-browse \
+            alex-oleshkevich/tap/sqlalchemy-lsp

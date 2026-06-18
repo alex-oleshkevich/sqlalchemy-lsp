@@ -1,0 +1,38 @@
+name: QA
+on: [push, pull_request]
+
+jobs:
+  rust:
+    strategy:
+      matrix:
+        toolchain: ["1.85", "stable"]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          components: rustfmt, clippy, llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
+      - name: Build binary for self-lint
+        run: cargo build
+      - name: Self-lint (REQ-REL-04)
+        run: ./target/debug/sqlalchemy-lsp check tests/e2e/fixtures/clean_blog/
+      - run: cargo install cargo-llvm-cov --locked
+      - run: cargo llvm-cov --fail-under-lines 80
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pytest pytest-asyncio pytest-lsp lsprotocol
+      - run: pytest tests/e2e
