@@ -21,8 +21,10 @@ jobs:
         run: cargo build
       - name: Self-lint (REQ-REL-04)
         run: ./target/debug/sqlalchemy-lsp check tests/e2e/fixtures/clean_blog/
-      - run: cargo install cargo-llvm-cov --locked
-      - run: cargo llvm-cov --fail-under-lines 80
+      - if: matrix.toolchain == 'stable'
+        run: cargo install cargo-llvm-cov --locked
+      - if: matrix.toolchain == 'stable'
+        run: cargo llvm-cov --fail-under-lines 80
 
   e2e:
     runs-on: ubuntu-latest
