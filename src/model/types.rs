@@ -4,6 +4,38 @@ use std::{collections::HashMap, fmt};
 
 use tower_lsp_server::ls_types::Uri;
 
+/// The severity of a diagnostic finding.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Severity {
+    Error,
+    Warning,
+    Info,
+    Hint,
+}
+
+/// Whether an automatic fix exists and how trustworthy it is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum FixKind {
+    Safe,
+    Unsafe,
+    #[default]
+    None,
+}
+
+/// Metadata flags a renderer or tooling reads alongside severity.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct DiagnosticTags {
+    pub fixable: bool,
+    pub deprecated: bool,
+    pub unnecessary: bool,
+}
+
+impl DiagnosticTags {
+    pub fn is_empty(self) -> bool {
+        !self.fixable && !self.deprecated && !self.unnecessary
+    }
+}
+
 /// A half-open source span, zero-based, end columns exclusive.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Range {

@@ -1,8 +1,10 @@
-// Types are defined here for all renderers and future feature handlers; none
-// are wired up yet, so dead_code is expected until the feature beads land.
+// Types defined here for all renderers and future feature handlers; none are
+// wired up yet, so dead_code is expected until the feature beads land.
 #![allow(dead_code)]
 
 use tower_lsp_server::ls_types::{DiagnosticSeverity, DiagnosticTag, Uri};
+
+pub use crate::model::types::{DiagnosticTags, Severity};
 
 /// A byte-offset span in a source file (from tree-sitter, not line/col).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -30,15 +32,7 @@ impl DiagnosticCode {
     }
 }
 
-/// The severity of a finding, after any per-code config override.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Severity {
-    Error,
-    Warning,
-    Info,
-    Hint,
-}
-
+// LSP conversion impls — kept here so model/types.rs stays LSP-agnostic.
 impl Severity {
     pub fn to_lsp(self) -> DiagnosticSeverity {
         match self {
@@ -47,6 +41,20 @@ impl Severity {
             Severity::Info => DiagnosticSeverity::INFORMATION,
             Severity::Hint => DiagnosticSeverity::HINT,
         }
+    }
+}
+
+impl DiagnosticTags {
+    /// Convert to the LSP `DiagnosticTag` list the protocol requires.
+    pub fn to_lsp(self) -> Vec<DiagnosticTag> {
+        let mut tags = Vec::new();
+        if self.deprecated {
+            tags.push(DiagnosticTag::DEPRECATED);
+        }
+        if self.unnecessary {
+            tags.push(DiagnosticTag::UNNECESSARY);
+        }
+        tags
     }
 }
 
@@ -68,47 +76,6 @@ pub enum Advice {
     Diff { before: String, after: String },
     /// A recommended next step phrased for the developer.
     Suggestion(String),
-}
-
-/// Metadata a renderer or tooling reads alongside severity.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct DiagnosticTags {
-    /// A quick-fix exists. CLI summary counts these; editor shows the lightbulb.
-    pub fixable: bool,
-    /// Maps to `lsp_types::DiagnosticTag::DEPRECATED` (struck-through in editor).
-    pub deprecated: bool,
-    /// Maps to `lsp_types::DiagnosticTag::UNNECESSARY` (greyed-out in editor).
-    pub unnecessary: bool,
-}
-
-impl DiagnosticTags {
-    pub fn is_empty(self) -> bool {
-        !self.fixable && !self.deprecated && !self.unnecessary
-    }
-
-    /// Convert to the LSP `DiagnosticTag` list the protocol requires.
-    pub fn to_lsp(self) -> Vec<DiagnosticTag> {
-        let mut tags = Vec::new();
-        if self.deprecated {
-            tags.push(DiagnosticTag::DEPRECATED);
-        }
-        if self.unnecessary {
-            tags.push(DiagnosticTag::UNNECESSARY);
-        }
-        tags
-    }
-}
-
-/// Whether an automatic fix exists and how trustworthy it is.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub enum FixKind {
-    /// Unambiguous correction: no schema or runtime change.
-    Safe,
-    /// Schema change, behavior change, or requires human judgment.
-    Unsafe,
-    /// No automatic fix; finding is informational only.
-    #[default]
-    None,
 }
 
 /// A single finding — the unified model every renderer consumes.
@@ -166,12 +133,12 @@ mod tests {
 
     #[test]
     fn fix_kind_default_is_none() {
+        use crate::model::types::FixKind;
         assert_eq!(FixKind::default(), FixKind::None);
     }
 
     #[test]
     fn severity_to_lsp() {
-        use tower_lsp_server::ls_types::DiagnosticSeverity;
         assert_eq!(Severity::Error.to_lsp(), DiagnosticSeverity::ERROR);
         assert_eq!(Severity::Warning.to_lsp(), DiagnosticSeverity::WARNING);
         assert_eq!(Severity::Info.to_lsp(), DiagnosticSeverity::INFORMATION);
