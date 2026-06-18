@@ -23,7 +23,7 @@ class Post(Base):
     body: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     author_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"))
 
-    author: Mapped["User"] = relationship("User", back_populates="posts")
+    author: Mapped["User"] = relationship("User", back_populates="posts", lazy="joined")
     comments: Mapped[List["Comment"]] = relationship("Comment", back_populates="post")
     tags: Mapped[List["Tag"]] = relationship(
         "Tag", secondary=post_tags, back_populates="posts"

@@ -3,6 +3,7 @@ pub mod completion;
 pub mod definition;
 pub mod diagnostics;
 pub mod f01;
+pub mod f02;
 pub mod hover;
 pub mod inlay_hints;
 pub mod references;

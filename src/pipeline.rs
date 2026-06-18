@@ -5,7 +5,7 @@ use tower_lsp_server::{Client, ls_types::Uri};
 
 use crate::{
     alembic::{extractor::extract_migration, MigrationFile},
-    features::f01,
+    features::{f01, f02},
     model::types::Model,
     parsing::{
         extractor::extract_models,
@@ -76,7 +76,9 @@ pub async fn run_pass2(state: &Arc<WorkspaceState>, client: &Client, supports_in
     let model_uris: Vec<Uri> = state.file_models.iter().map(|e| e.key().clone()).collect();
     for uri in &model_uris {
         let diags = if let Some(models) = state.file_models.get(uri) {
-            f01::check_file(&models, state)
+            let mut d = f01::check_file(&models, state);
+            d.extend(f02::check_file(&models, state));
+            d
         } else {
             vec![]
         };

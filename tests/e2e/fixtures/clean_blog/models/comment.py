@@ -18,9 +18,9 @@ class Comment(Base):
         Integer, ForeignKey("comments.id"), nullable=True
     )
 
-    post: Mapped["Post"] = relationship("Post", back_populates="comments")
+    post: Mapped["Post"] = relationship("Post", back_populates="comments", lazy="joined")
     parent: Mapped[Optional["Comment"]] = relationship(
-        "Comment", remote_side="Comment.id", back_populates="replies"
+        "Comment", remote_side="Comment.id", back_populates="replies", lazy="joined"
     )
     replies: Mapped[List["Comment"]] = relationship(
         "Comment", back_populates="parent"
