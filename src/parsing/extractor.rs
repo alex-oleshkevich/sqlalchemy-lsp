@@ -687,14 +687,16 @@ fn try_extract_relationship(
         viewonly,
     } = parse_relationship_args(&args_node, source);
 
+    let annotation_target = extract_model_from_mapped_type(&mapped_type);
     let target_model = target
-        .or_else(|| extract_model_from_mapped_type(&mapped_type))
+        .or_else(|| annotation_target.clone())
         .unwrap_or_default();
 
     Some(Relationship {
         name,
         target_model,
         explicit_target,
+        annotation_target,
         back_populates,
         lazy,
         uselist,
@@ -905,7 +907,14 @@ fn parse_mapped_column_args(
                     .unwrap_or("");
                 match key {
                     "primary_key" => ca.primary_key = val == "True",
-                    "nullable" => ca.nullable = val == "True",
+                    "nullable" => {
+                        ca.nullable = val == "True";
+                        match val {
+                            "False" => ca.explicit_nullable_false = true,
+                            "True" => ca.explicit_nullable_true = true,
+                            _ => {}
+                        }
+                    }
                     "unique" => ca.unique = val == "True",
                     "index" => ca.index = val == "True",
                     "default" => ca.default = Some(val.to_string()),

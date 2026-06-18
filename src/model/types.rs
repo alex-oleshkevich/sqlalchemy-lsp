@@ -78,6 +78,12 @@ pub struct Column {
 pub struct ColumnArgs {
     pub primary_key: bool,
     pub nullable: bool,
+    /// True when `nullable=False` was explicitly written in source.
+    /// Needed for H202 which detects `Optional` annotation + explicit non-nullable.
+    pub explicit_nullable_false: bool,
+    /// True when `nullable=True` was explicitly written in source.
+    /// Needed for W201 which detects non-Optional FK column with explicit nullable.
+    pub explicit_nullable_true: bool,
     pub unique: bool,
     pub index: bool,
     pub default: Option<String>,
@@ -90,6 +96,8 @@ impl Default for ColumnArgs {
         Self {
             primary_key: false,
             nullable: true,
+            explicit_nullable_false: false,
+            explicit_nullable_true: false,
             unique: false,
             index: false,
             default: None,
@@ -113,6 +121,9 @@ pub struct Relationship {
     pub name: String,
     pub target_model: String,
     pub explicit_target: Option<String>,
+    /// Model extracted from the type annotation (e.g. `Mapped["User"]`).
+    /// Used by W405 to detect `relationship("Admin")` + `Mapped["User"]` mismatch.
+    pub annotation_target: Option<String>,
     pub back_populates: Option<String>,
     pub lazy: Option<String>,
     pub uselist: Option<bool>,

@@ -217,7 +217,7 @@ fn e105_table_arg_column_not_found(model: &Model, out: &mut Vec<Diagnostic>) {
 fn w201_nullable_not_optional(model: &Model, out: &mut Vec<Diagnostic>) {
     for col in model.columns.values() {
         if col.foreign_key.is_some()
-            && col.args.nullable
+            && (col.args.nullable || col.args.explicit_nullable_true)
             && !col.args.primary_key
             && !is_optional(&col.mapped_type)
             && !matches!(col.mapped_type, MappedType::Unknown(_))
@@ -444,14 +444,17 @@ fn w405_target_mismatch(model: &Model, out: &mut Vec<Diagnostic>) {
         let Some(ref explicit) = rel.explicit_target else {
             continue;
         };
-        if *explicit != rel.target_model {
+        let Some(ref annotation) = rel.annotation_target else {
+            continue;
+        };
+        if explicit != annotation {
             let range = rel.target_range.unwrap_or(rel.full_range);
             out.push(d(
                 "SQLA-W405",
                 DiagnosticSeverity::WARNING,
                 format!(
                     "Annotation says `{}` but relationship() argument says `{}`",
-                    rel.target_model, explicit
+                    annotation, explicit
                 ),
                 range,
             ));
@@ -467,6 +470,9 @@ fn h406_missing_fk_for_relationship(
     for rel in model.relationships.values() {
         if rel.is_list {
             continue; // Only scalar relationships
+        }
+        if rel.secondary.is_some() {
+            continue; // Many-to-many via association table — FK lives in the secondary, not on the model
         }
         if rel.target_model.is_empty() {
             continue;
@@ -778,6 +784,8 @@ mod tests {
             args: ColumnArgs {
                 primary_key: false,
                 nullable: false,
+                explicit_nullable_false: false,
+                explicit_nullable_true: false,
                 unique: false,
                 index: false,
                 default: None,
@@ -802,6 +810,8 @@ mod tests {
             args: ColumnArgs {
                 primary_key: false,
                 nullable,
+                explicit_nullable_false: false,
+                explicit_nullable_true: false,
                 unique: false,
                 index: false,
                 default: None,
@@ -824,6 +834,7 @@ mod tests {
             name: name.to_string(),
             target_model: target.to_string(),
             explicit_target: None,
+            annotation_target: None,
             back_populates: back_pop.map(|s| s.to_string()),
             lazy: None,
             uselist: None,
@@ -1101,6 +1112,7 @@ mod tests {
         let mut model = bare_model("Post", Some("posts"));
         let mut r = rel("author", "User", false, None);
         r.explicit_target = Some("Account".to_string()); // disagrees with annotation
+        r.annotation_target = Some("User".to_string());
         model.relationships.insert("author".to_string(), r);
         let diags = check_file(&[model], &state);
         assert!(diags.iter().any(|d| code(d) == "SQLA-W405"), "{diags:?}");

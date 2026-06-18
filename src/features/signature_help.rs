@@ -489,6 +489,8 @@ mod tests {
             mapped_type: mt,
             args: ColumnArgs {
                 nullable,
+                explicit_nullable_false: false,
+                explicit_nullable_true: false,
                 primary_key: false,
                 unique: false,
                 index: false,

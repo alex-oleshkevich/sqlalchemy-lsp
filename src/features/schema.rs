@@ -370,6 +370,8 @@ mod tests {
             args: ColumnArgs {
                 primary_key: pk,
                 nullable,
+                explicit_nullable_false: false,
+                explicit_nullable_true: false,
                 unique: uq,
                 index: false,
                 default: None,
@@ -399,6 +401,7 @@ mod tests {
             name: name.to_string(),
             target_model: target.to_string(),
             explicit_target: None,
+            annotation_target: None,
             back_populates: None,
             lazy: None,
             uselist: None,

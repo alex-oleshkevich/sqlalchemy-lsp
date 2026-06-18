@@ -537,6 +537,7 @@ mod tests {
             name: name.to_string(),
             target_model: target.to_string(),
             explicit_target: None,
+            annotation_target: None,
             back_populates: bp.map(String::from),
             lazy: None,
             uselist: None,

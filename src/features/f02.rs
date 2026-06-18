@@ -169,7 +169,7 @@ fn h202_optional_without_nullable(
     // Fires when annotation says Optional but nullable=False was explicit.
     // `ColumnArgs::nullable` defaults to `true`; we can only detect the
     // explicit-false case by checking if it was set to false.
-    if !col.args.nullable && matches!(col.mapped_type, MappedType::Optional(_)) {
+    if col.args.explicit_nullable_false && matches!(col.mapped_type, MappedType::Optional(_)) {
         out.push(diag(
             "SQLA-H202",
             DiagnosticSeverity::HINT,
@@ -516,6 +516,8 @@ mod tests {
             args: ColumnArgs {
                 primary_key: true,
                 nullable: false,
+                explicit_nullable_false: false,
+                explicit_nullable_true: false,
                 unique: false,
                 index: false,
                 default: None,
@@ -546,6 +548,7 @@ mod tests {
             name: name.to_string(),
             target_model: target.to_string(),
             explicit_target: None,
+            annotation_target: None,
             back_populates: None,
             lazy: None,
             uselist: None,
@@ -654,7 +657,8 @@ mod tests {
         model.columns.insert("id".to_string(), pk_col("id"));
         let mut col = plain_col("bio");
         col.mapped_type = MappedType::Optional(Box::new(MappedType::Str));
-        col.args.nullable = false; // explicit false
+        col.args.nullable = false;
+        col.args.explicit_nullable_false = true;
         model.columns.insert("bio".to_string(), col);
         let diags = check_file(&[model], &state);
         assert!(diags.iter().any(|d| code(d) == "SQLA-H202"), "{diags:?}");
