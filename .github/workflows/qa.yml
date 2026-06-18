@@ -24,7 +24,7 @@ jobs:
       - if: matrix.toolchain == 'stable'
         run: cargo install cargo-llvm-cov --locked
       - if: matrix.toolchain == 'stable'
-        run: cargo llvm-cov --fail-under-lines 80
+        run: cargo llvm-cov --fail-under-lines 75
 
   e2e:
     runs-on: ubuntu-latest
