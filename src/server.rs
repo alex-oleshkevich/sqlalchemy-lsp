@@ -13,7 +13,8 @@ use tower_lsp_server::{
     Client, LanguageServer,
     jsonrpc::Result,
     ls_types::{
-        CodeActionKind, CodeActionOptions, CodeActionProviderCapability,
+        CodeAction, CodeActionKind, CodeActionOptions, CodeActionOrCommand, CodeActionParams,
+        CodeActionProviderCapability,
         CompletionOptions, CompletionParams, CompletionResponse,
         GotoDefinitionParams, DiagnosticOptions, DiagnosticServerCapabilities, Hover,
         HoverParams,
@@ -34,7 +35,7 @@ use tower_lsp_server::{
 };
 
 use crate::{
-    features::{completion, definition, hover, inlay_hints, references, rename, signature_help, symbols},
+    features::{code_action, completion, definition, hover, inlay_hints, references, rename, signature_help, symbols},
     pipeline::{run_pass1, run_pass2},
     state::WorkspaceState,
     util::positions::apply_changes,
@@ -186,7 +187,7 @@ impl LanguageServer for Backend {
                 inlay_hint_provider: Some(OneOf::Left(true)),
                 code_action_provider: Some(CodeActionProviderCapability::Options(
                     CodeActionOptions {
-                        code_action_kinds: Some(vec![CodeActionKind::QUICKFIX]),
+                        code_action_kinds: Some(vec![CodeActionKind::QUICKFIX, CodeActionKind::REFACTOR]),
                         resolve_provider: Some(true),
                         work_done_progress_options: Default::default(),
                     },
@@ -422,6 +423,17 @@ impl LanguageServer for Backend {
         let include_decl = params.context.include_declaration;
         let locs = references::provide_references(&uri, pos, include_decl, &self.state);
         Ok(if locs.is_empty() { None } else { Some(locs) })
+    }
+
+    // ── Code actions ──────────────────────────────────────────────────────────
+
+    async fn code_action(&self, params: CodeActionParams) -> Result<Option<Vec<CodeActionOrCommand>>> {
+        let actions = code_action::provide_code_actions(&params, &self.state);
+        Ok(Some(actions))
+    }
+
+    async fn code_action_resolve(&self, action: CodeAction) -> Result<CodeAction> {
+        Ok(code_action::resolve_code_action(action, &self.state))
     }
 
     // ── Inlay hints ───────────────────────────────────────────────────────────
