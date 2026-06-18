@@ -29,11 +29,12 @@ use tower_lsp_server::{
         ServerCapabilities, ServerInfo, SignatureHelpOptions, SignatureHelpParams,
         TextDocumentPositionParams, TextDocumentSyncCapability, TextDocumentSyncKind, Uri,
         WorkspaceEdit, WorkspaceSymbolOptions, WorkspaceSymbolParams, WorkspaceSymbolResponse,
+        InlayHint, InlayHintParams,
     },
 };
 
 use crate::{
-    features::{completion, definition, hover, references, rename, signature_help, symbols},
+    features::{completion, definition, hover, inlay_hints, references, rename, signature_help, symbols},
     pipeline::{run_pass1, run_pass2},
     state::WorkspaceState,
     util::positions::apply_changes,
@@ -421,6 +422,15 @@ impl LanguageServer for Backend {
         let include_decl = params.context.include_declaration;
         let locs = references::provide_references(&uri, pos, include_decl, &self.state);
         Ok(if locs.is_empty() { None } else { Some(locs) })
+    }
+
+    // ── Inlay hints ───────────────────────────────────────────────────────────
+
+    async fn inlay_hint(&self, params: InlayHintParams) -> Result<Option<Vec<InlayHint>>> {
+        let uri = params.text_document.uri;
+        let range = params.range;
+        let hints = inlay_hints::provide_inlay_hints(&uri, &range, &self.state);
+        Ok(Some(hints))
     }
 
     // ── Workspace symbols ─────────────────────────────────────────────────────
