@@ -504,7 +504,7 @@ async fn scan_workspace(
 
     // Collect .py files matching indicators in a blocking thread.
     let root_owned: PathBuf = root_path.as_ref().to_path_buf();
-    let Ok(py_files) = tokio::task::spawn_blocking(move || collect_py_files(&root_owned)).await
+    let Ok(py_files) = tokio::task::spawn_blocking(move || crate::pipeline::collect_py_files(&root_owned)).await
     else {
         return;
     };
@@ -534,28 +534,3 @@ async fn scan_workspace(
     generation.fetch_add(1, Ordering::SeqCst);
 }
 
-/// Recursively collect `.py` files under `root`, skipping hidden and cache dirs.
-fn collect_py_files(root: &std::path::Path) -> Vec<PathBuf> {
-    let mut out = Vec::new();
-    let Ok(entries) = std::fs::read_dir(root) else {
-        return out;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            let skip = path
-                .file_name()
-                .map(|n| {
-                    let s = n.to_string_lossy();
-                    s.starts_with('.') || s == "__pycache__" || s == "node_modules"
-                })
-                .unwrap_or(false);
-            if !skip {
-                out.extend(collect_py_files(&path));
-            }
-        } else if path.extension().is_some_and(|e| e == "py") {
-            out.push(path);
-        }
-    }
-    out
-}

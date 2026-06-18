@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{path::{Path, PathBuf}, sync::Arc};
 
 use tokio::task;
 use tower_lsp_server::{Client, ls_types::Uri};
@@ -13,6 +13,97 @@ use crate::{
     },
     state::WorkspaceState,
 };
+
+// ── CLI headless scan ─────────────────────────────────────────────────────────
+
+/// Synchronously scan all Python files under `root`, extract models and
+/// migration metadata, and compute diagnostics — without any LSP client.
+/// Returns a fully indexed `WorkspaceState` ready for CLI reporting.
+pub fn build_workspace_index(root: &Path) -> Arc<WorkspaceState> {
+    let state = Arc::new(WorkspaceState::new());
+    let py_files = collect_py_files(root);
+
+    let mut parser = tree_sitter::Parser::new();
+    parser
+        .set_language(&tree_sitter_python::LANGUAGE.into())
+        .expect("load python grammar");
+
+    for path in &py_files {
+        let Ok(source) = std::fs::read_to_string(path) else { continue };
+        if !has_sqlalchemy_indicators(&source) && !has_alembic_indicators(&source) {
+            continue;
+        }
+        let Some(uri) = Uri::from_file_path(path) else { continue };
+        let Some(tree) = parser.parse(&source, None) else { continue };
+
+        let models = if has_sqlalchemy_indicators(&source) {
+            extract_models(&source, &tree)
+        } else {
+            vec![]
+        };
+        let migration = if has_alembic_indicators(&source) {
+            extract_migration(&source, &tree)
+        } else {
+            None
+        };
+
+        state.file_sources.insert(uri.clone(), source);
+        state.parse_trees.insert(uri.clone(), tree);
+        state.update_file(&uri, models);
+        if let Some(mf) = migration {
+            state.update_migration(&uri, mf);
+        }
+    }
+
+    // Cross-file diagnostics (no client.publish_diagnostics needed for CLI)
+    let model_uris: Vec<Uri> = state.file_models.iter().map(|e| e.key().clone()).collect();
+    for uri in &model_uris {
+        if let Some(models) = state.file_models.get(uri) {
+            let mut d = f01::check_file(&models, &state);
+            d.extend(f02::check_file(&models, &state));
+            state.diagnostics.insert(uri.clone(), d);
+        }
+    }
+
+    let heads = alembic_diag::compute_head_set(&state);
+    let migration_uris: Vec<Uri> = state.migration_files.iter().map(|e| e.key().clone()).collect();
+    for uri in &migration_uris {
+        if let Some(mf) = state.migration_files.get(uri) {
+            let alembic_diags = alembic_diag::check_migration(&mf, &state, &heads);
+            let mut diags = state.diagnostics.get(uri).map(|d| d.clone()).unwrap_or_default();
+            diags.extend(alembic_diags);
+            state.diagnostics.insert(uri.clone(), diags);
+        }
+    }
+
+    state
+}
+
+/// Recursively collect `.py` files under `root`, skipping hidden and cache dirs.
+pub fn collect_py_files(root: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return out;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            let skip = path
+                .file_name()
+                .map(|n| {
+                    let s = n.to_string_lossy();
+                    s.starts_with('.') || s == "__pycache__" || s == "node_modules"
+                })
+                .unwrap_or(false);
+            if !skip {
+                out.extend(collect_py_files(&path));
+            }
+        } else if path.extension().is_some_and(|e| e == "py") {
+            out.push(path);
+        }
+    }
+    out
+}
 
 // ── Pass 1: per-file parse and extraction ─────────────────────────────────────
 
