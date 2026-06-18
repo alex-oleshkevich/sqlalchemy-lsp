@@ -1,12 +1,12 @@
 # F07 — Rename
 
-> **Status:** Draft
+> **Status:** Approved
 >
-> **Version:** 0.1   ·   **Last updated:** 2026-06-17
+> **Version:** 0.1   ·   **Last updated:** 2026-06-18
 >
 > **Purpose:** Workspace-wide rename of a model, column, or relationship — rewriting not just the declaration but every foreign-key string, relationship target, and `back_populates` value that names it, in one atomic edit.
 >
-> **Depends on:** [constitution](../constitution.md), [E07-data-model](../foundations/E07-data-model.md), [E30-extraction-and-indexing](../foundations/E30-extraction-and-indexing.md)   ·   **Related:** [E01-architecture](../foundations/E01-architecture.md), [E17-testing](../foundations/E17-testing.md), [E29-e2e-testing](../foundations/E29-e2e-testing.md), [F05-go-to-definition](F05-go-to-definition.md), [F06-find-references](F06-find-references.md), [F08-symbols](F08-symbols.md)
+> **Depends on:** [constitution](../constitution.md), [E07-data-model](../foundations/E07-data-model.md), [E30-extraction-and-indexing](../foundations/E30-extraction-and-indexing.md)   ·   **Related:** [E01-architecture](../foundations/E01-architecture.md), [E17-testing](../foundations/E17-testing.md), [E29-e2e-testing](../foundations/E29-e2e-testing.md), [F05-go-to-definition](F05-go-to-definition.md), [F06-find-references](F06-find-references.md)
 
 > Requirement tag: **RN**
 
@@ -243,4 +243,6 @@ The §12.2 scenarios, written Given/When/Then, are this feature's acceptance cri
 
 ## 17. Changelog
 
+- **2026-06-18** — Approved.
+- **2026-06-18** — Removed [F08-symbols](F08-symbols.md) from the Related list: F08 is now narrowed to Alembic-revision workspace symbols and no longer relates to model navigation.
 - **2026-06-17** — Initial draft. Ported the legacy `rename.rs` paths (model, column, relationship) into nine requirements, made explicit the FK-table-half-only rewrite (REQ-RN-04), the both-halves column match (REQ-RN-05), the single-atomic-`WorkspaceEdit` rule (REQ-RN-07), and cross-linked the [E01](../foundations/E01-architecture.md) no-stale-data guarantee for the post-rename index (REQ-RN-08). Added the testing and E2E plans against the `clean-blog` cast.

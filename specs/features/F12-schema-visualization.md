@@ -1,8 +1,8 @@
 # F12 — Schema Visualization
 
-> **Status:** Draft
+> **Status:** Approved
 >
-> **Version:** 0.1   ·   **Last updated:** 2026-06-17
+> **Version:** 0.1   ·   **Last updated:** 2026-06-18
 >
 > **Purpose:** The schema diagram the server renders from the indexed models — an entity-relationship view of tables, columns, primary/foreign keys, and relationships — offered both as the `sqlalchemy.showSchema` editor command and as a `sqlalchemy-lsp schema` CLI subcommand that emits Mermaid, Graphviz DOT, or ASCII.
 >
@@ -423,4 +423,5 @@ The §12.2 scenarios, written Given/When/Then, are this feature's acceptance cri
 
 ## 16. Changelog
 
+- **2026-06-18** — Approved.
 - **2026-06-17** — Initial draft. Ported the legacy ASCII schema renderer, added Mermaid (default) and Graphviz DOT formats, and exposed the diagram through both the `sqlalchemy.showSchema` execute-command and the `sqlalchemy-lsp schema` CLI subcommand (owned jointly with [F14](F14-cli-linter.md)) with `--format` and `--output FILE`. Added the example `clean-blog` Mermaid ER diagram and DOT output, the ASCII rendering mockup and editor-command-result mockup, the deterministic-output and empty/partial-workspace rules, and the testing, E2E, and non-functional sections (including the `--output`-writes-only-the-named-path privacy rule).

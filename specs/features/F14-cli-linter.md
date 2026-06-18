@@ -1,6 +1,6 @@
 # F14 — CLI Linter
 
-> **Status:** Draft
+> **Status:** Approved
 >
 > **Version:** 0.2   ·   **Last updated:** 2026-06-18
 >
@@ -593,5 +593,6 @@ The §12.2 scenarios, written Given/When/Then, are this feature's acceptance cri
 
 ## 17. Changelog
 
+- **2026-06-18** — Approved.
 - **2026-06-18** (v0.2) — Adapted two Biome patterns. Split `--fix` into **Safe** and **Unsafe** by the [E16](../foundations/E16-conventions.md) `FixKind` (classified per code in [F11](F11-code-actions.md)): `--fix` applies only Safe edits, `--fix --unsafe` adds the Unsafe ones; reworked the summary to ruff/mypy form — `[*] 2 fixable with the \`--fix\` option.` / `[*] 1 fixable with \`--fix --unsafe\`.` and `Fixed 2 problems; 3 remaining (1 fixable with --unsafe).` — and updated the §6.1/§6.3 mockups to match. Recast the nine output shapes as **reporters** (`--reporter`, alias `--output-format`) that all render from the one [E16](../foundations/E16-conventions.md) diagnostic model, with the `full` frame and `help:`/`note:` lines coming from `CodeFrame`/`Note` **advices** rather than hand-formatting; added an `advices` field and a `fix.applicability` (`FixKind`) field to the JSON shape. Taught `--select`/`--ignore` the [E15](../foundations/E15-app-config.md) **class tokens and presets** (`SQLA-3xx`, `all`/`recommended`/`none`). Extended Testing and E2E to cover `--fix` skipping Unsafe, `--fix --unsafe` applying them with unchanged exit codes, `--unsafe` without `--fix` erroring, and `--ignore SQLA-4xx` filtering a whole class. Cross-linked E16/E15/F11/E17.
 - **2026-06-17** — Initial draft. Defined the `lsp`/`check`/`stats`/`schema` subcommand surface mirroring babel-lsp's CLI; the `check` output contract with nine ruff-style `--output-format` renderers, the exact concise line `rel-path:line:col: CODE message`, and the ruff/mypy summary (`All checks passed!` / `Found T problems (…) in F files (checked N files).` / `Fixed K; R remaining.`); `--select`/`--ignore` config override, `# noqa` honoring with `SQLA-W901`, `--fix` deterministic-edit parity with [F11](F11-code-actions.md), `--exit-zero`, and exit codes 0/1/2; the `stats` workspace summary and the `schema` subcommand deferring to [F12](F12-schema-visualization.md). Added the five console mockups, the machine-format examples, and the `check` exit-code flow diagram.

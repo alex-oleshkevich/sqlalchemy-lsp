@@ -52,17 +52,17 @@
 | [F03-completions](features/F03-completions.md) | Context-aware completions + snippets | Working on completion | ✅ |
 | [F04-hover](features/F04-hover.md) | Model/column/relationship hover cards | Working on hover | ✅ |
 | [F05-go-to-definition](features/F05-go-to-definition.md) | Jump to model/column/counterpart | Working on navigation | ✅ |
-| [F06-find-references](features/F06-find-references.md) | Find model/column/relationship refs | Working on references | ✏️ |
-| [F07-rename](features/F07-rename.md) | Workspace rename of models/columns/relationships | Working on rename | ✏️ |
-| [F08-symbols](features/F08-symbols.md) | Document + workspace symbols | Working on symbols | ✏️ |
-| [F09-signature-help](features/F09-signature-help.md) | Signatures for FK/relationship/mapped_column/op/constructor | Working on signature help | ✏️ |
-| [F10-inlay-hints](features/F10-inlay-hints.md) | Inline FK/relationship hints | Working on inlay hints | ✏️ |
-| [F11-code-actions](features/F11-code-actions.md) | Quick fixes (parity with `--fix`) | Working on code actions | ✏️ |
-| [F12-schema-visualization](features/F12-schema-visualization.md) | Schema diagram (Mermaid/Graphviz/ASCII) | Working on schema view | ✏️ |
-| [F13-alembic-support](features/F13-alembic-support.md) | Migration diagnostics, op completions, jump-to-model | Working on Alembic | ✏️ |
-| [F14-cli-linter](features/F14-cli-linter.md) | Headless `check`/`schema`/`stats` | Working on the CLI | ✏️ |
-| [F15-editor-integration](features/F15-editor-integration.md) | Zed/Helix/Neovim/VS Code + marketplace | Packaging for an editor | ✏️ |
-| [F16-release-ci](features/F16-release-ci.md) | Cross-compile, AUR, Homebrew, version gate | Working on release/CI | ✏️ |
+| [F06-find-references](features/F06-find-references.md) | Find model/column/relationship refs | Working on references | ✅ |
+| [F07-rename](features/F07-rename.md) | Workspace rename of models/columns/relationships | Working on rename | ✅ |
+| [F08-symbols](features/F08-symbols.md) | Alembic revision symbols (by id / message) | Finding a migration by id or message | ✅ |
+| [F09-signature-help](features/F09-signature-help.md) | Signatures for FK/relationship/mapped_column/op/constructor | Working on signature help | ✅ |
+| [F10-inlay-hints](features/F10-inlay-hints.md) | Inline FK/relationship hints | Working on inlay hints | ✅ |
+| [F11-code-actions](features/F11-code-actions.md) | Quick fixes (parity with `--fix`) | Working on code actions | ✅ |
+| [F12-schema-visualization](features/F12-schema-visualization.md) | Schema diagram (Mermaid/Graphviz/ASCII) | Working on schema view | ✅ |
+| [F13-alembic-support](features/F13-alembic-support.md) | Migration diagnostics, op completions, jump-to-model | Working on Alembic | ✅ |
+| [F14-cli-linter](features/F14-cli-linter.md) | Headless `check`/`schema`/`stats` | Working on the CLI | ✅ |
+| [F15-editor-integration](features/F15-editor-integration.md) | Zed/Helix/Neovim/VS Code + marketplace | Packaging for an editor | ✅ |
+| [F16-release-ci](features/F16-release-ci.md) | Cross-compile, AUR, Homebrew, version gate | Working on release/CI | ✅ |
 
 ## Decisions
 
@@ -99,6 +99,9 @@ When you author or change a spec, update its row here in the same edit. When a s
 
 ## Changelog
 
+- **2026-06-18** — **Approved the whole suite:** F06–F16 flipped to ✅ (all features and foundations are now Approved; only the `F00` template remains a boilerplate).
+- **2026-06-18** — Added Alembic diagnostic **`SQLA-W704` null-constraint-name** (a migration passing `None` as a constraint name) to `F13`, with the `null-constraint-name` fixture in `E17`.
+- **2026-06-18** — F08 narrowed to Alembic-revision workspace symbols (search a migration by revision id or message); it no longer provides a document-symbol outline or model/table/column search. Updated its index row.
 - **2026-06-18** — **Approved** all 9 foundations (E01, E02, E03, E07, E15, E16, E17, E29, E30) and features F01–F05; status icons flipped to ✅.
 - **2026-06-18** — `SQLA-I207` (missing-column-comment) now ships **off by default** ([ADR-008](decisions/ADR-008-default-off-missing-column-comment.md), amending ADR-003): the off-by-default set is now three rules (`H416`/`H602` as shaky heuristics, `I207` as opt-in style). Propagated through `F02` (v0.4) and `E15` (v0.4).
 - **2026-06-18** — Suite refinements: dropped the `naming_convention` config key (read from code); generalized alias resolution in `E30` (+ alias test matrix/fixtures in `E17`); adapted seven patterns from Biome — safe/unsafe fixes (`F11`/`F14`), single-traversal diagnostics engine + lazy code-action resolve (`E01`), the diagnostic model with structured advices, tags, and `FixKind` (`E16`), config `overrides`/group-tokens/presets + central code registry (`E15`), and `Deprecated` LSP tags on modernization lints (`F02`). Version bumps across E01/E15/E16/E17/E30 and F01/F02/F11/F14.

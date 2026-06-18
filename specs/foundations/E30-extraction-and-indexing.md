@@ -2,7 +2,7 @@
 
 > **Status:** Approved
 >
-> **Version:** 0.2   ·   **Last updated:** 2026-06-18
+> **Version:** 0.3   ·   **Last updated:** 2026-06-18
 >
 > **Purpose:** How the server turns Python source into the facts [E07](E07-data-model.md) defines — the tree-sitter walk, the detection indicators that decide what to look at, what counts as a model, the per-file symbol table that resolves every import alias, and the resolution rules for annotated columns, forward references, and user-defined base classes.
 >
@@ -264,7 +264,7 @@ Migration files are walked separately, producing the Alembic facts.
 
 **REQ-EXTRACT-10 — Extract revision metadata and the `op.*` calls inside upgrade/downgrade.**
 
-For an Alembic candidate, the walk reads the module-level `revision` and `down_revision` assignments (a string, a tuple, or `None`) into a `MigrationFile`, and walks the bodies of the `upgrade()` and `downgrade()` functions for `op.*` calls. Each call's operation name, table reference, and column reference become an `OpCall` ([E07](E07-data-model.md)). The revision feeds `revision_index` so chain diagnostics ([F13](../features/F13-alembic-support.md)) can resolve parents to files.
+For an Alembic candidate, the walk reads the module-level `revision` and `down_revision` assignments (a string, a tuple, or `None`) into a `MigrationFile`, and walks the bodies of the `upgrade()` and `downgrade()` functions for `op.*` calls. Each call's operation name, table reference, and column reference become an `OpCall` ([E07](E07-data-model.md)). Extraction also captures the revision **message** — the human label taken from the filename slug and the module docstring's first line — into `MigrationFile.message`, so a migration can be found by what it does (feeds [F08](../features/F08-symbols.md)). The revision feeds `revision_index` so chain diagnostics ([F13](../features/F13-alembic-support.md)) can resolve parents to files.
 
 ### 5.11 Indexing
 
@@ -388,6 +388,7 @@ Each row is tested twice — plain and aliased — and both must yield the same 
 
 ## 17. Changelog
 
+- **2026-06-18** — v0.3: REQ-EXTRACT-10 now also captures the revision **message** (from the filename slug and the module docstring's first line) into `MigrationFile.message`, feeding the narrowed [F08](../features/F08-symbols.md) Alembic-revision workspace symbols.
 - **2026-06-18** — Approved.
 - **2026-06-18** — v0.2: generalized §5.5 from relationship-only alias tracking into full **import & symbol resolution** — a per-file symbol table (REQ-EXTRACT-07) resolving aliased modules, constructs, column types, bases, models, and typing helpers (REQ-EXTRACT-07b–07g), including the symbol-vs-string model-reference distinction and the resolve-by-binding-not-spelling negative rule. Added the §11 Testing section with the plain-vs-aliased resolution matrix, complex/combined cases, and the requirement-coverage table; added the alias edge cases in §10.
 - **2026-06-17** — Initial draft. Ported the tree-sitter walk, detection indicators, the model-recognition rule, the class-body classification, and relationship-alias tracking from the legacy extractor. Added the three new resolution rules: `Annotated[...]`/`type_annotation_map` columns (REQ-EXTRACT-08a/b), forward references / lambdas / quoted names (REQ-EXTRACT-08c), and user-defined base + `MetaData` resolution feeding `SQLA-H107` (REQ-EXTRACT-09). Added the extract→index Mermaid flow.

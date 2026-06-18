@@ -22,10 +22,10 @@ Python developers building applications on SQLAlchemy 2.0 and Alembic — the ki
 
 - **Diagnostics** — flags ORM correctness bugs (bad FKs, mismatched `back_populates`, cascade errors) and best-practice issues (deprecated `backref`, naive `DateTime`, mutable defaults). See [F01](features/F01-orm-correctness-diagnostics.md), [F02](features/F02-best-practice-lints.md).
 - **Completions & signature help** — context-aware suggestions inside `ForeignKey("…")`, `relationship(...)`, `mapped_column(...)`, `__table_args__`, model constructors, and Alembic `op.*`. See [F03](features/F03-completions.md), [F09](features/F09-signature-help.md).
-- **Hover & navigation** — rich cards for models and columns, go-to-definition and find-references across FKs and relationships, and workspace-wide rename. See [F04](features/F04-hover.md)–[F08](features/F08-symbols.md).
+- **Hover & navigation** — rich cards for models and columns, go-to-definition and find-references across FKs and relationships, and workspace-wide rename. See [F04](features/F04-hover.md)–[F07](features/F07-rename.md).
 - **Inlay hints & schema view** — inline FK/relationship hints and an ER diagram of your models (Mermaid, Graphviz, or ASCII). See [F10](features/F10-inlay-hints.md), [F12](features/F12-schema-visualization.md).
 - **Quick fixes** — generate a missing `__tablename__`, fix a `back_populates`, modernize a `backref`, and more — identical to what the CLI's `--fix` applies. See [F11](features/F11-code-actions.md).
-- **Alembic intelligence** — migration-chain checks, op completions, and jump-to-model. See [F13](features/F13-alembic-support.md).
+- **Alembic intelligence** — migration-chain checks, op completions, and jump-to-model; you can also jump to a migration by its revision id or message. See [F13](features/F13-alembic-support.md), [F08](features/F08-symbols.md).
 - **A headless CLI** — `sqlalchemy-lsp check` runs the same diagnostics in CI with ruff-style output; `schema` and `stats` round it out. See [F14](features/F14-cli-linter.md).
 - **Editor extensions** — Zed, Helix, Neovim, and VS Code. See [F15](features/F15-editor-integration.md).
 
@@ -59,4 +59,5 @@ flowchart LR
 
 ## 7. Changelog
 
+- **2026-06-18** — Repointed the hover/navigation bullet to [F04]–[F07] (F08 is no longer a model-navigation feature) and noted in the Alembic bullet that you can jump to a migration by revision id or message ([F08]).
 - **2026-06-17** — Initial overview.

@@ -1,8 +1,8 @@
 # F09 — Signature Help
 
-> **Status:** Draft
+> **Status:** Approved
 >
-> **Version:** 0.1   ·   **Last updated:** 2026-06-17
+> **Version:** 0.1   ·   **Last updated:** 2026-06-18
 >
 > **Purpose:** Signatures for the SQLAlchemy and Alembic call sites — `ForeignKey`, `relationship`, `mapped_column`, the Alembic `op.*` operations, and the model constructor `User(…)` synthesized from the model's columns — with the active parameter highlighted as you type. It fires only inside these constructs and stays silent everywhere else.
 >
@@ -440,6 +440,7 @@ The §12.2 scenarios, written Given/When/Then, are this feature's acceptance cri
 
 ## 17. Changelog
 
+- **2026-06-18** — Approved.
 - **2026-06-17** — Initial draft. Specified curated signatures for `ForeignKey`, `relationship`, `mapped_column`, and the Alembic `op.*` operations, the statically-synthesized model-constructor signature (columns → typed parameters, nullable/default → optional, keyword-aware highlighting), the active-parameter comma count, and the companion-gate negative contract (REQ-SIG-11); ported the signature templates from the legacy signature-help handler; added the §6 popover mockups and the §7 dispatch decision tree.
 </content>
 </invoke>

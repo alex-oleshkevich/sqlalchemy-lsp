@@ -2,7 +2,7 @@
 
 > **Status:** Approved
 >
-> **Version:** 0.1   ·   **Last updated:** 2026-06-18
+> **Version:** 0.2   ·   **Last updated:** 2026-06-18
 >
 > **Purpose:** The in-memory shapes the whole server reads — the model, column, relationship, and Alembic facts, plus the workspace index that joins them. Every feature reads these structures; none re-parses.
 >
@@ -215,15 +215,16 @@ pub enum MappedType {
 
 The migration facts mirror the model facts: one per file, indexed by revision, with the table and column references inside each operation kept for navigation. The full set lives in [F13](../features/F13-alembic-support.md); the shapes live here.
 
-**REQ-DATA-08 — A `MigrationFile` records the revision, its parent, and the operations inside it.**
+**REQ-DATA-08 — A `MigrationFile` records the revision, its parent, its message, and the operations inside it.**
 
-A migration file declares `revision` and `down_revision` at module scope and calls `op.*` inside `upgrade()`/`downgrade()`. The fact captures all of it, with ranges so chain diagnostics can point at the offending revision string:
+A migration file declares `revision` and `down_revision` at module scope and calls `op.*` inside `upgrade()`/`downgrade()`. The fact captures all of it, with ranges so chain diagnostics can point at the offending revision string. It also carries the revision's human label — the `message`, taken from the filename slug and/or the first line of the module docstring — so a migration can be found by what it does, not just its id ([F08](../features/F08-symbols.md)):
 
 ```rust
 // src/alembic/mod.rs
 pub struct MigrationFile {
     pub revision: Option<String>,
     pub down_revision: DownRevision,
+    pub message: Option<String>, // human label: filename slug / docstring first line
     pub revision_range: Option<Range>,
     pub down_revision_range: Option<Range>,
     pub op_calls: Vec<OpCall>,
@@ -379,5 +380,6 @@ When you hover `Post.author_id`, the hover feature reads the `Column`, sees the 
 
 ## 17. Changelog
 
+- **2026-06-18** — v0.2: added a `message` field to `MigrationFile` (REQ-DATA-08) — the revision's human label, taken from the filename slug and/or the module docstring's first line — so a migration can be found by message, feeding the narrowed [F08](../features/F08-symbols.md) Alembic-revision workspace symbols.
 - **2026-06-18** — Approved.
 - **2026-06-17** — Initial draft. Ported the SQLAlchemy facts (`Model`, `Column` + `ColumnArgs` + `ForeignKeyRef`, `Relationship`, `TableArg`, `MappedType`) and the Alembic facts (`MigrationFile`, `OpCall`, `TableRef`, `ColumnRef`, `DownRevision`) from the legacy types, added the `Column.key` alias field for [F04](../features/F04-hover.md), and specified the seven-map `WorkspaceState` index with its atomic-replacement and single-source-of-truth rules.

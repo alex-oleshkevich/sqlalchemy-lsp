@@ -29,7 +29,7 @@ The groundwork every feature stands on.
 
 ## M2 — Navigation, hover, symbols
 
-- [ ] [F04-hover](features/F04-hover.md) · [F05-go-to-definition](features/F05-go-to-definition.md) · [F06-find-references](features/F06-find-references.md) · [F08-symbols](features/F08-symbols.md).
+- [ ] [F04-hover](features/F04-hover.md) · [F05-go-to-definition](features/F05-go-to-definition.md) · [F06-find-references](features/F06-find-references.md).
 
 ## M3 — Completions & signature help
 
@@ -46,6 +46,7 @@ The groundwork every feature stands on.
 ## M6 — Alembic
 
 - [ ] [F13-alembic-support](features/F13-alembic-support.md) — migration diagnostics, op completions, jump-to-model.
+- [ ] [F08-symbols](features/F08-symbols.md) — Alembic revision workspace symbols (find a migration by id or message).
 
 ## M7 — CLI & schema
 
@@ -72,4 +73,5 @@ Parked deliberately, not forgotten:
 
 ## Changelog
 
+- **2026-06-18** — Moved [F08-symbols](features/F08-symbols.md) from M2 (navigation/hover/symbols) to M6 (Alembic): it is now an Alembic-revision navigation feature (find a migration by id or message), not a model-symbol feature.
 - **2026-06-17** — Initial roadmap (M0–M9 + future scope).

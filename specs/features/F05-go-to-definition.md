@@ -6,7 +6,7 @@
 >
 > **Purpose:** Jump from a SQLAlchemy or Alembic reference to the thing it names — a foreign key to its target column, a relationship to its target model, a `back_populates` to its counterpart, a `__table_args__` column to its definition, and a migration's table or column to the model behind it.
 >
-> **Depends on:** [constitution](../constitution.md), [E07-data-model](../foundations/E07-data-model.md), [E30-extraction-and-indexing](../foundations/E30-extraction-and-indexing.md)   ·   **Related:** [E01-architecture](../foundations/E01-architecture.md), [E17-testing](../foundations/E17-testing.md), [E29-e2e-testing](../foundations/E29-e2e-testing.md), [F06-find-references](F06-find-references.md), [F07-rename](F07-rename.md), [F08-symbols](F08-symbols.md), [F13-alembic-support](F13-alembic-support.md)
+> **Depends on:** [constitution](../constitution.md), [E07-data-model](../foundations/E07-data-model.md), [E30-extraction-and-indexing](../foundations/E30-extraction-and-indexing.md)   ·   **Related:** [E01-architecture](../foundations/E01-architecture.md), [E17-testing](../foundations/E17-testing.md), [E29-e2e-testing](../foundations/E29-e2e-testing.md), [F06-find-references](F06-find-references.md), [F07-rename](F07-rename.md), [F13-alembic-support](F13-alembic-support.md)
 
 > Requirement tag: **DEF**
 
@@ -265,5 +265,6 @@ The §12.2 scenarios, written Given/When/Then, are this feature's acceptance cri
 
 ## 17. Changelog
 
+- **2026-06-18** — Removed [F08-symbols](F08-symbols.md) from the Related list: F08 is now narrowed to Alembic-revision workspace symbols and no longer relates to model navigation.
 - **2026-06-18** — Approved.
 - **2026-06-17** — Initial draft. Ported the legacy `definition.rs` jumps (FK → column, relationship → model, `back_populates` → counterpart, `__table_args__` column → definition, Alembic table/column → model, bare-name fallback) into ten requirements, made the unresolved-target `null` rule explicit per P4, and added the testing and E2E plans against the `clean-blog` cast.

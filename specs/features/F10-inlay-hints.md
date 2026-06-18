@@ -1,8 +1,8 @@
 # F10 — Inlay Hints
 
-> **Status:** Draft
+> **Status:** Approved
 >
-> **Version:** 0.1   ·   **Last updated:** 2026-06-17
+> **Version:** 0.1   ·   **Last updated:** 2026-06-18
 >
 > **Purpose:** The inline hints the server renders at the end of a column or relationship line — `→ User.id` for a foreign key, `list[Comment]` or `→ User` for a relationship — and the refresh it fires after a re-index so those hints never go stale.
 >
@@ -307,4 +307,5 @@ The §12.2 scenarios, written Given/When/Then, are this feature's acceptance cri
 
 ## 16. Changelog
 
+- **2026-06-18** — Approved.
 - **2026-06-17** — Initial draft. Ported the legacy FK and relationship inlay hints, refined the labels to `→ Model.column` and Python-shaped `list[Model]` / `→ Model`, added the `(m2m)` marker for `secondary` relationships, and specified the `inlayHint/refresh`-after-relink consumer rule (cross-linking [E01](../foundations/E01-architecture.md)). Added the inline `‹ ›` mockup and the tooltip sketch, the cardinality decision diagram, the testing and E2E plans (including the refresh-after-reindex journey), and the §13.1/§13.2 non-functional sections.

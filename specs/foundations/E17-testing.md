@@ -2,7 +2,7 @@
 
 > **Status:** Approved
 >
-> **Version:** 0.2   ·   **Last updated:** 2026-06-18
+> **Version:** 0.3   ·   **Last updated:** 2026-06-18
 >
 > **Purpose:** How sqlalchemy-lsp is tested — the coverage policy, the test categories, the tools, and the shared fixtures every feature reuses. Each feature's own plan lives in its spec's §11 and links here.
 >
@@ -212,6 +212,10 @@ The constitution's example cast as a fully consistent, lint-clean SQLAlchemy 2.0
 
 `clean-blog` with an `op.add_column("userz", ...)` naming a table no model defines — triggers `SQLA-H703`. Reused by [F13](../features/F13-alembic-support.md), [F05](../features/F05-go-to-definition.md).
 
+### null-constraint-name
+
+`clean-blog` with a migration that drops a constraint without naming it — `op.drop_constraint(None, "posts", type_="foreignkey")` (the shape Alembic's autogenerate emits when it can't determine the name), plus an `op.create_foreign_key(None, ...)` to cover the create side — triggers `SQLA-W704`. Reused by [F13](../features/F13-alembic-support.md).
+
 #### Alias resolution fixtures
 
 These back the [E30 §11 alias matrix](E30-extraction-and-indexing.md#11-testing). Each is a `clean-blog` variant that re-spells one construct through an import alias; the test asserts the resolved fact is **identical** to the plain form. All are reused by [E30](E30-extraction-and-indexing.md#11-testing); several also by [F04](../features/F04-hover.md)/[F05](../features/F05-go-to-definition.md) to prove features see through aliases.
@@ -326,6 +330,7 @@ The rule extends to fixes. `sqlalchemy-lsp check --fix` must produce **byte-iden
 
 ## 9. Changelog
 
+- **2026-06-18** — v0.3: added the **null-constraint-name** Alembic fixture — a `clean-blog` migration variant that passes `None` as a constraint name (`op.drop_constraint(None, ...)`, `op.create_foreign_key(None, ...)`) to trigger `SQLA-W704` ([F13](../features/F13-alembic-support.md)).
 - **2026-06-18** — Approved.
 - **2026-06-18** — v0.2: added the **alias resolution fixtures** family (17 `clean-blog` variants — module/submodule/construct/type/base/cross-file/model-symbol/string-by-classname/typing/Annotated/fake-symbol/star-import/complex/mixed/shadow/type-checking) backing the [E30 §11 alias matrix](E30-extraction-and-indexing.md#11-testing), each asserting the aliased spelling resolves to the same fact as the plain one.
 - **2026-06-17** — Initial draft: the unit/integration split, the `cargo test` + `insta` + `cargo llvm-cov` toolchain, the named `clean-blog` fixtures registry with one broken variant per `SQLA-` code, the `non-ascii` and `large-workspace` fixtures, requirement traceability, and the CLI/server parity rule (REQ-TST-05).

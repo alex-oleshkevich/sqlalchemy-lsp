@@ -1,12 +1,12 @@
 # F06 — Find References
 
-> **Status:** Draft
+> **Status:** Approved
 >
-> **Version:** 0.1   ·   **Last updated:** 2026-06-17
+> **Version:** 0.1   ·   **Last updated:** 2026-06-18
 >
 > **Purpose:** From a model, column, or relationship definition, list everywhere across the workspace that points at it — foreign keys, relationship targets, base-class uses, and `back_populates` counterparts.
 >
-> **Depends on:** [constitution](../constitution.md), [E07-data-model](../foundations/E07-data-model.md), [E30-extraction-and-indexing](../foundations/E30-extraction-and-indexing.md)   ·   **Related:** [E01-architecture](../foundations/E01-architecture.md), [E17-testing](../foundations/E17-testing.md), [E29-e2e-testing](../foundations/E29-e2e-testing.md), [F05-go-to-definition](F05-go-to-definition.md), [F07-rename](F07-rename.md), [F08-symbols](F08-symbols.md)
+> **Depends on:** [constitution](../constitution.md), [E07-data-model](../foundations/E07-data-model.md), [E30-extraction-and-indexing](../foundations/E30-extraction-and-indexing.md)   ·   **Related:** [E01-architecture](../foundations/E01-architecture.md), [E17-testing](../foundations/E17-testing.md), [E29-e2e-testing](../foundations/E29-e2e-testing.md), [F05-go-to-definition](F05-go-to-definition.md), [F07-rename](F07-rename.md)
 
 > Requirement tag: **REF**
 
@@ -238,4 +238,6 @@ The §12.2 scenarios, written Given/When/Then, are this feature's acceptance cri
 
 ## 17. Changelog
 
+- **2026-06-18** — Approved.
+- **2026-06-18** — Removed [F08-symbols](F08-symbols.md) from the Related list: F08 is now narrowed to Alembic-revision workspace symbols and no longer relates to model navigation.
 - **2026-06-17** — Initial draft. Ported the legacy `references.rs` searches (model references via FKs, relationship targets, and bases; column references via FKs matched on both halves; relationship references via `back_populates`) into eight requirements, made the empty-result and `includeDeclaration` rules explicit, and added the testing and E2E plans against the `clean-blog` cast.

@@ -1,8 +1,8 @@
 # F16 — Release & CI
 
-> **Status:** Draft
+> **Status:** Approved
 >
-> **Version:** 0.1   ·   **Last updated:** 2026-06-17
+> **Version:** 0.1   ·   **Last updated:** 2026-06-18
 >
 > **Purpose:** The GitHub Actions pipeline — quality gates on every push, and cross-compiled binaries published to a GitHub Release, AUR, and Homebrew on every version tag.
 >
@@ -439,6 +439,7 @@ Release is where `sqlalchemy-lsp`'s supply chain lives, so this is the section t
 
 ## 16. Changelog
 
+- **2026-06-18** — Approved.
 - **2026-06-17** — Initial draft: the `qa.yml` gate (fmt/clippy/test/`llvm-cov` coverage floor/e2e over MSRV 1.85 + stable, where a failing test *or* an uncovered requirement blocks merge), the `release.yml` tag-triggered build matrix over five targets with per-platform checksums, the tag↔`Cargo.toml` version-parity gate, the GitHub Release packaging binaries + checksums + the Zed extension, the `publish-aur` job (→ `ssh://aur@aur.archlinux.org/sqlalchemy-lsp.git`, gated on `AUR_SSH_KEY`), the `publish-homebrew` job (`brew bump-formula-pr` against `homebrew-tap`, gated on a token), the `release_assets` test, and the §11 Testing + §12 E2E (incl. the dry-run release and version-gate paths) + §13.1 Security (secrets only via the CI secret store, never logged). Records the no-crates.io/no-PyPI, AUR+Homebrew, and unsigned-macOS decisions. No §6 UI Mockups and no §13.2 Accessibility — F16 is CI/packaging with no rendered surface (constitution §4.6).
 </content>
 </invoke>

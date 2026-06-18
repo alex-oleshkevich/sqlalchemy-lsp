@@ -1,8 +1,8 @@
 # F15 — Editor Integration
 
-> **Status:** Draft
+> **Status:** Approved
 >
-> **Version:** 0.1   ·   **Last updated:** 2026-06-17
+> **Version:** 0.2   ·   **Last updated:** 2026-06-18
 >
 > **Purpose:** How `sqlalchemy-lsp` reaches its first-class editors — a Zed extension, plus Helix, Neovim, and VS Code configuration — and the shared launch contract every one of them uses, layered alongside the user's Python language server.
 >
@@ -75,7 +75,7 @@ Our facts live in Python source — models in `models/*.py`, migrations under `m
 
 **REQ-EDIT-03 — Advertise exactly the capabilities the features implement.**
 
-On `initialize`, the server advertises the capability set the `F01`–`F14` features back: incremental text sync, push **and** pull diagnostics, completion (trigger characters include `.` for `op.`), hover, signature help, go-to-definition, find-references, rename (with prepare), document and workspace symbols, inlay hints, code actions, and the `executeCommand` for the schema view ([F12](F12-schema-visualization.md)). It negotiates `positionEncoding`, preferring UTF-8 (REQ-ARCH-10). The advertised set is the contract editors bind against; the [E29](../foundations/E29-e2e-testing.md) lifecycle journey pins it.
+On `initialize`, the server advertises the capability set the `F01`–`F14` features back: incremental text sync, push **and** pull diagnostics, completion (trigger characters include `.` for `op.`), hover, signature help, go-to-definition, find-references, rename (with prepare), workspace symbols (Alembic revisions), inlay hints, code actions, and the `executeCommand` for the schema view ([F12](F12-schema-visualization.md)). It negotiates `positionEncoding`, preferring UTF-8 (REQ-ARCH-10). The advertised set is the contract editors bind against; the [E29](../foundations/E29-e2e-testing.md) lifecycle journey pins it.
 
 **REQ-EDIT-04 — Coexist with the primary Python language server.**
 
@@ -383,6 +383,8 @@ The trust boundary here is narrow: the extensions and configs only spawn a local
 
 ## 16. Changelog
 
+- **2026-06-18** — Approved.
+- **2026-06-18** — v0.2: the advertised-capability set now lists workspace symbols (Alembic revisions) instead of document and workspace symbols — F08 is narrowed to Alembic-revision workspace symbols, so we no longer advertise document symbols.
 - **2026-06-17** — Initial draft: the shared launch contract (`sqlalchemy-lsp lsp --stdio`, advertised capabilities, Python-only attach with the project/`alembic.ini`/`.git` root markers), the WASM Zed extension and its install/package scripts, the Helix `languages.toml` merge with its companion-ordering note, the Neovim `vim.lsp.config` snippet, the bespoke VS Code TypeScript extension (new vs. the siblings), the `editors/` layout, the full Zed marketplace submission checklist (root + extension-dir LICENSE, exact `repository`/`authors`, the `zed-industries/extensions` submodule + `pnpm sort-extensions` + `gh pr create` flow), and the §11 Testing + §12 E2E + §13.1 Security plans. No §6 UI Mockups and no §13.2 Accessibility — F15 ships packaging and config, not a rendered surface, and accessibility is the editor's (constitution §4.6).
 </content>
 </invoke>

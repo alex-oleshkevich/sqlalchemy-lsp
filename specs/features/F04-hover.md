@@ -138,7 +138,7 @@ Hovering a model's class name renders a card that *summarizes* the model — it 
 
 **REQ-HOV-10 — The model card summarizes columns and relations; it never lists every column inline.**
 
-When you hover a model class, the card shows its table, a **column summary**, a **relationship summary**, and the docstring. A model can have dozens of columns, so the card does not print them all. The `columns` line leads with the **count** and the load-bearing highlights — the primary key, the unique columns, and the foreign keys — then a capped preview of about six column names followed by `+N more`. The `relations` line caps the same way. The card answers "what shape is this model?"; the **full, ordered enumeration is the document outline** ([F08-symbols](F08-symbols.md)), which is where a reader goes to see every column. A model with no `__tablename__` shows `— (no __tablename__)` on the table line rather than a guessed name (P4). The card is shown in [§6.3](#63-model-card--user).
+When you hover a model class, the card shows its table, a **column summary**, a **relationship summary**, and the docstring. A model can have dozens of columns, so the card does not print them all. The `columns` line leads with the **count** and the load-bearing highlights — the primary key, the unique columns, and the foreign keys — then a capped preview of about six column names followed by `+N more`. The `relations` line caps the same way. The card answers "what shape is this model?"; the **full, ordered enumeration is the editor's own document outline (provided by your Python LSP) or go-to-definition**, which is where a reader goes to see every column. A model with no `__tablename__` shows `— (no __tablename__)` on the table line rather than a guessed name (P4). The card is shown in [§6.3](#63-model-card--user).
 
 ## 6. UI Mockups
 
@@ -202,7 +202,7 @@ States: FK target resolved (`→ users.id (User.id)`) vs. unresolved (`→ users
 
 ### 6.3 Model card — `User`
 
-Shown when the cursor is on a model's class name. A model can have dozens of columns, so the card **summarizes** rather than enumerates (REQ-HOV-10): a count, the load-bearing highlights (pk, unique, fks), and a capped preview — never every column. The full ordered list is the document outline ([F08-symbols](F08-symbols.md)).
+Shown when the cursor is on a model's class name. A model can have dozens of columns, so the card **summarizes** rather than enumerates (REQ-HOV-10): a count, the load-bearing highlights (pk, unique, fks), and a capped preview — never every column. The full ordered list is the editor's own document outline (provided by your Python LSP) or go-to-definition.
 
 ```
 ┌────────────────────────────────────────────────────────┐
@@ -217,7 +217,7 @@ Shown when the cursor is on a model's class name. A model can have dozens of col
 └────────────────────────────────────────────────────────┘
 ```
 
-For a small model every column fits and there is no `+N more`; the example above shows the capped form a wide model produces. To *see* every column, open the outline (F08) or go-to-definition — hover gives the shape, the outline gives the list.
+For a small model every column fits and there is no `+N more`; the example above shows the capped form a wide model produces. To *see* every column, open the editor's own document outline (provided by your Python LSP) or go-to-definition — hover gives the shape, the outline gives the list.
 
 States: few columns (all shown, no `+N more`) vs. many (count + highlights + capped preview) · has `__tablename__` vs. not (the `table` line reads `— (no __tablename__)`) · has a docstring vs. not (line omitted) · a relationship target that resolves vs. one marked unresolved.
 
@@ -430,6 +430,6 @@ The §12.2 scenarios, written Given/When/Then, are this feature's acceptance cri
 
 ## 16. Changelog
 
-- **2026-06-18** — v0.2: added the explicit model-card requirement (REQ-HOV-10) — the card **summarizes** columns (count + pk/unique/fk highlights + a capped preview with `+N more`) instead of listing every column, deferring the full enumeration to the F08 outline. Extended REQ-HOV-03 so the column card's `used by` line also lists foreign keys that point *at* the column (e.g. every `FK → User.id`) and caps long lists at six. Added the §6.1 populated-`used by` variant card, rebuilt the §6.3 model card for wide models, and added the matching test rows.
+- **2026-06-18** — v0.2: added the explicit model-card requirement (REQ-HOV-10) — the card **summarizes** columns (count + pk/unique/fk highlights + a capped preview with `+N more`) instead of listing every column, deferring the full enumeration to the editor's own outline / go-to-definition. Extended REQ-HOV-03 so the column card's `used by` line also lists foreign keys that point *at* the column (e.g. every `FK → User.id`) and caps long lists at six. Added the §6.1 populated-`used by` variant card, rebuilt the §6.3 model card for wide models, and added the matching test rows. Repointed the model-card outline reference (REQ-HOV-10, §6.3) away from F08 to the editor's own document outline / go-to-definition, since F08 is now narrowed to Alembic-revision workspace symbols.
 - **2026-06-18** — Approved.
 - **2026-06-17** — Initial draft. Ported the legacy hover cards (model, column, FK string, relationship, cascade, `back_populates`) and specified the new cross-referenced column card — DB alias, index/constraint membership, cross-file FK target, and relationships-that-use — plus the `sa.`-prefixed-form rule and the null-on-non-SQLAlchemy companion rule. Added the three canonical ASCII cards (column, FK column, model), the cascade and relationship card sketches, the testing and E2E plans, and the §13.1/§13.2 non-functional sections.

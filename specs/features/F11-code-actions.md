@@ -1,6 +1,6 @@
 # F11 — Code Actions
 
-> **Status:** Draft
+> **Status:** Approved
 >
 > **Version:** 0.3   ·   **Last updated:** 2026-06-18
 >
@@ -482,6 +482,7 @@ The §12.2 scenarios, written Given/When/Then, are this feature's acceptance cri
 
 ## 16. Changelog
 
+- **2026-06-18** — Approved.
 - **2026-06-18** — v0.3: adapted two Biome patterns. Tagged every action with a `FixKind` (the Safe / Unsafe enum owned by [E16](../foundations/E16-conventions.md)) and added the FixKind column to the catalog plus a dedicated Safe / Unsafe mapping table with rationale (REQ-CA-1A); `check --fix` now applies Safe only, `check --fix --unsafe` opts into the rest, and parity (REQ-CA-02) holds per FixKind. Added lazy code-action resolution (REQ-CA-1B): `textDocument/codeAction` returns metadata only and the `WorkspaceEdit` is built on `codeAction/resolve` (`resolveProvider = true`, [E01 REQ-ARCH-15](../foundations/E01-architecture.md#5-detailed-specification)), with the preview rendered from the E16 `Diff` advice. Reworked the Data Shapes to show the metadata→resolve two-stage response. Extended the test plan, E2E scenarios (E2E-12…E2E-15), acceptance criteria (AC-06, AC-07), and requirement coverage to cover Safe auto-apply, Unsafe skip without `--unsafe`, and resolve-produces-the-edit. Added E01 and E16 to Depends-on.
 - **2026-06-18** — v0.2: the `SQLA-H107` scaffold (REQ-CA-17) now inserts a conventional default `naming_convention` map; the dropped `naming_convention` config key ([E15](../foundations/E15-app-config.md) v0.2) is no longer a source. Reworded the E15 dependency.
 - **2026-06-17** — Initial draft. Ported the four legacy code actions (generate `__tablename__`, fix `back_populates`, add FK column, proactive `back_populates`) to the `SQLA-` codes, added a quick fix per fixable F01/F02 lint, mapped each fix to the diagnostic it resolves, and pinned the byte-identical parity with `check --fix` ([E17 REQ-TST-05](../foundations/E17-testing.md#6-conventions)). Added the quick-fix menu and generate-`__tablename__` before/after mockups, the decision flowchart, the data shapes for single- and two-file edits, and the testing, E2E, and non-functional sections.
