@@ -236,7 +236,7 @@ flowchart TB
     classDef none fill:#F8D7DA,stroke:#DC3545,color:#721C24
 
     start["signatureHelp at position"]:::ctx
-    call{"enclosing call?"}:::ctx
+    callsite{"enclosing call?"}:::ctx
     op{"op.* operation?"}:::ctx
     base{"base name?"}:::ctx
     model{"indexed model?"}:::ctx
@@ -249,9 +249,9 @@ flowchart TB
     nothing["return None
     (Python LSP owns it)"]:::none
 
-    start --> call
-    call -->|no| nothing
-    call -->|yes| op
+    start --> callsite
+    callsite -->|no| nothing
+    callsite -->|yes| op
     op -->|yes| opsig
     op -->|no| base
     base -->|recognized| fixed

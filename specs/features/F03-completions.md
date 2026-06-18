@@ -282,7 +282,7 @@ flowchart TB
 
     start["completion at position"]:::ctx
     op{"text ends in `op.`?"}:::ctx
-    call{"enclosing call?"}:::ctx
+    callsite{"enclosing call?"}:::ctx
     base{"base name?"}:::ctx
     snip{"snippet prefix?"}:::ctx
 
@@ -295,11 +295,11 @@ flowchart TB
 
     start --> op
     op -->|yes| ops
-    op -->|no| call
-    call -->|yes| base
+    op -->|no| callsite
+    callsite -->|yes| base
     base -->|recognized| items
     base -->|unrecognized| nothing
-    call -->|no| snip
+    callsite -->|no| snip
     snip -->|matches| snips
     snip -->|no match| nothing
 

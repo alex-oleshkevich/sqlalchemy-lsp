@@ -250,7 +250,7 @@ flowchart TD
     A["pyproject.toml<br>[tool.sqlalchemy-lsp]"] --> M["merge per key<br>(higher source wins)"]
     B["sqlalchemy-lsp.toml"] --> M
     C["built-in defaults"] --> M
-    M --> S["select (default: all)"]
+    M --> S["select (default: recommended)"]
     S --> I["subtract ignore"]
     I --> V["apply severity overrides"]
     V --> R["active rule set"]
