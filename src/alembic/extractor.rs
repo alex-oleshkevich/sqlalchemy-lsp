@@ -197,6 +197,19 @@ const CONSTRAINT_OPS: &[&str] = &[
     "create_check_constraint",
 ];
 
+/// Ops with no meaningful table reference (raw SQL, index-first, or non-DDL utility calls).
+/// Skip table extraction entirely for these.
+const NO_TABLE_OPS: &[&str] = &[
+    "execute",
+    "create_index",
+    "drop_index",
+    "get_bind",
+    "get_context",
+    "run_async",
+    "invoke",
+    "batch_alter_table",
+];
+
 /// Extract table, column, and null-constraint-name info from an op call's argument list.
 fn extract_op_args(
     operation: &str,
@@ -208,6 +221,10 @@ fn extract_op_args(
     Option<ColumnRef>,
     Option<crate::model::types::Range>,
 ) {
+    if NO_TABLE_OPS.contains(&operation) {
+        return (None, None, None);
+    }
+
     let mut c = args.walk();
     let positional: Vec<Node> = args
         .named_children(&mut c)
@@ -407,5 +424,47 @@ def downgrade() -> None:
         let src = "x = 1\ndef foo(): pass\n";
         let tree = parse(src);
         assert!(extract_migration(src, &tree).is_none());
+    }
+
+    #[test]
+    fn execute_op_has_no_table_name() {
+        let src = r#"
+from alembic import op
+revision = "abc12345"
+down_revision = None
+def upgrade() -> None:
+    op.execute("delete from accounts where id = '00000000-0000-0000-0000-000000000000'::uuid;")
+def downgrade() -> None:
+    pass
+"#;
+        let tree = parse(src);
+        let mf = extract_migration(src, &tree).unwrap();
+        let exec = mf.op_calls.iter().find(|o| o.operation == "execute");
+        assert!(exec.is_some(), "execute op should be recorded");
+        assert!(
+            exec.unwrap().table_name.is_none(),
+            "op.execute table_name must be None — raw SQL is not a table name"
+        );
+    }
+
+    #[test]
+    fn create_index_op_has_no_table_name() {
+        let src = r#"
+from alembic import op
+revision = "bcd23456"
+down_revision = None
+def upgrade() -> None:
+    op.create_index("ix_users_email", "users", ["email"])
+def downgrade() -> None:
+    pass
+"#;
+        let tree = parse(src);
+        let mf = extract_migration(src, &tree).unwrap();
+        let idx = mf.op_calls.iter().find(|o| o.operation == "create_index");
+        assert!(idx.is_some(), "create_index op should be recorded");
+        assert!(
+            idx.unwrap().table_name.is_none(),
+            "op.create_index table_name must be None — first arg is index name not table"
+        );
     }
 }
