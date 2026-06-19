@@ -388,8 +388,14 @@ fn model_card(model: &Model, state: &WorkspaceState) -> String {
     } else {
         format!("  ·  {}", highlights.join("  ·  "))
     };
-    md.push_str(&format!("| columns | {}{}  |\n", n_cols, highlights_str));
-    md.push_str(&format!("| | {} |\n", preview));
+    let col_cell = if preview.is_empty() {
+        format!("{}{}", n_cols, highlights_str)
+    } else if highlights.is_empty() {
+        format!("{}  —  {}", n_cols, preview)
+    } else {
+        format!("{}{}  —  {}", n_cols, highlights_str, preview)
+    };
+    md.push_str(&format!("| columns | {} |\n", col_cell));
 
     // Relationship summary
     let n_rels = model.relationships.len();
