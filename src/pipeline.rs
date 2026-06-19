@@ -202,6 +202,12 @@ pub async fn run_pass1(uri: Uri, source: String, state: &Arc<WorkspaceState>, cl
 
     match result {
         Ok(Some((tree, models, migration, local_aliases))) => {
+            tracing::debug!(
+                uri = uri.as_str(),
+                models = models.len(),
+                migration = migration.is_some(),
+                "pass1 complete"
+            );
             // Update global alias index with any new aliases defined in this file.
             for (name, args) in local_aliases {
                 state.annotated_alias_index.insert(name, args);
@@ -220,6 +226,7 @@ pub async fn run_pass1(uri: Uri, source: String, state: &Arc<WorkspaceState>, cl
             client.publish_diagnostics(uri, diags, None).await;
         }
         Ok(None) | Err(_) => {
+            tracing::debug!(uri = uri.as_str(), "pass1 parse error");
             // Parse failed — push empty diagnostics so stale squiggles disappear.
             client.publish_diagnostics(uri, vec![], None).await;
         }
@@ -240,6 +247,11 @@ pub async fn run_pass2(
 ) {
     // Run F01 diagnostics for every indexed SA model file, store results, then publish.
     let model_uris: Vec<Uri> = state.file_models.iter().map(|e| e.key().clone()).collect();
+    tracing::info!(
+        sa_files = model_uris.len(),
+        models = state.model_index.len(),
+        "pass2 relink"
+    );
     for uri in &model_uris {
         let diags = if let Some(models) = state.file_models.get(uri) {
             let mut d = f01::check_file(&models, state);

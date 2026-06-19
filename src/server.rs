@@ -123,6 +123,7 @@ impl Backend {
 
 impl LanguageServer for Backend {
     async fn initialize(&self, params: InitializeParams) -> Result<InitializeResult> {
+        tracing::info!("initialize: client={}", params.client_info.as_ref().map(|c| c.name.as_str()).unwrap_or("unknown"));
         // Negotiate position encoding: prefer UTF-8 when the client advertises it.
         let use_utf8 = params
             .capabilities
@@ -282,6 +283,7 @@ impl LanguageServer for Backend {
 
         // Kick off the background workspace scan after returning from `initialized`.
         if let Some(root) = self.root_uri.lock().unwrap().clone() {
+            tracing::info!("workspace scan starting: root={}", root.as_str());
             let state = Arc::clone(&self.state);
             let client = self.client.clone();
             let generation = Arc::clone(&self.generation);
@@ -293,6 +295,7 @@ impl LanguageServer for Backend {
     }
 
     async fn shutdown(&self) -> Result<()> {
+        tracing::info!("shutdown");
         if let Some(h) = self.debounce_handle.lock().unwrap().take() {
             h.abort();
         }
@@ -304,6 +307,7 @@ impl LanguageServer for Backend {
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
         let uri = params.text_document.uri;
         let source = params.text_document.text;
+        tracing::debug!(uri = uri.as_str(), bytes = source.len(), "did_open");
         self.state.open_uris.insert(uri.clone(), ());
         {
             let lock = self.uri_lock(&uri);
@@ -316,6 +320,7 @@ impl LanguageServer for Backend {
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
         let uri = params.text_document.uri;
+        tracing::debug!(uri = uri.as_str(), changes = params.content_changes.len(), "did_change");
         let encoding = self.encoding();
         // Apply incremental edits atomically: serialize per-URI so burst changes land in order.
         let new_source = {
@@ -337,6 +342,7 @@ impl LanguageServer for Backend {
 
     async fn did_save(&self, params: DidSaveTextDocumentParams) {
         let uri = params.text_document.uri;
+        tracing::debug!(uri = uri.as_str(), "did_save");
         // Use the text included with the save event when available; fall back to stored source.
         let source = params
             .text
@@ -348,6 +354,7 @@ impl LanguageServer for Backend {
     }
 
     async fn did_close(&self, params: DidCloseTextDocumentParams) {
+        tracing::debug!(uri = params.text_document.uri.as_str(), "did_close");
         // Remove from open_uris so the watcher can take over for this URI.
         // Facts and diagnostics persist until the file is deleted (REQ-ARCH-11).
         self.state.open_uris.remove(&params.text_document.uri);
@@ -356,6 +363,7 @@ impl LanguageServer for Backend {
     // ── File watching ─────────────────────────────────────────────────────────
 
     async fn did_change_watched_files(&self, params: DidChangeWatchedFilesParams) {
+        tracing::debug!(events = params.changes.len(), "did_change_watched_files");
         for event in params.changes {
             let uri = event.uri;
             // Open-buffer overlay: ignore watcher events for files open in the editor.
@@ -414,6 +422,13 @@ impl LanguageServer for Backend {
             .map(|s| s.clone())
             .unwrap_or_default();
         let items = completion::provide_completions(&uri, &source, pos, &self.state);
+        tracing::debug!(
+            uri = uri.as_str(),
+            line = pos.line,
+            col = pos.character,
+            n = items.as_ref().map(|v| v.len()).unwrap_or(0),
+            "completion"
+        );
         Ok(items.map(CompletionResponse::Array))
     }
 
@@ -444,7 +459,9 @@ impl LanguageServer for Backend {
     async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
         let uri = params.text_document_position_params.text_document.uri;
         let pos = params.text_document_position_params.position;
-        Ok(hover::provide_hover(&uri, pos, &self.state))
+        let result = hover::provide_hover(&uri, pos, &self.state);
+        tracing::debug!(uri = uri.as_str(), line = pos.line, col = pos.character, found = result.is_some(), "hover");
+        Ok(result)
     }
 
     // ── Go-to-definition ──────────────────────────────────────────────────────
@@ -462,6 +479,13 @@ impl LanguageServer for Backend {
             .map(|s| s.clone())
             .unwrap_or_default();
         let loc = definition::resolve_definition(&uri, &source, pos, &self.state);
+        tracing::debug!(
+            uri = uri.as_str(),
+            line = pos.line,
+            col = pos.character,
+            target = loc.as_ref().map(|l| l.uri.to_string()).as_deref().unwrap_or("none"),
+            "goto_definition"
+        );
         Ok(loc.map(GotoDefinitionResponse::Scalar))
     }
 
@@ -475,6 +499,7 @@ impl LanguageServer for Backend {
         let pos = params.text_document_position.position;
         let include_decl = params.context.include_declaration;
         let locs = references::provide_references(&uri, pos, include_decl, &self.state);
+        tracing::debug!(uri = uri.as_str(), line = pos.line, col = pos.character, n = locs.len(), "references");
         Ok(if locs.is_empty() { None } else { Some(locs) })
     }
 
@@ -575,6 +600,7 @@ async fn scan_workspace(
         return;
     };
 
+    tracing::info!(total_py = py_files.len(), "workspace scan: processing files");
     // Read and filter files, then run Pass 1 on each matching one.
     for path in &py_files {
         let Ok(source) = std::fs::read_to_string(path) else {
