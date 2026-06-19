@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 
+use dashmap::DashMap;
 use tree_sitter::{Node, Tree};
 
 use super::python::{node_text, ts_range};
@@ -351,12 +352,30 @@ fn find_mapped_column_call_in_subtree<'tree>(
 
 // ── Main extraction entry point ───────────────────────────────────────────────
 
-pub fn extract_models(source: &str, tree: &Tree) -> Vec<Model> {
+/// Extract only the annotated type aliases from `source` (e.g. `UUIDPk = Annotated[...]`).
+/// Used to populate the global alias index before extracting models.
+pub fn extract_annotated_aliases(source: &str, tree: &Tree) -> HashMap<String, ColumnArgs> {
+    let bytes = source.as_bytes();
+    let root = tree.root_node();
+    let mut sym = build_symbol_table(root, bytes);
+    collect_annotated_aliases(root, bytes, &mut sym);
+    sym.annotated_column_args
+}
+
+pub fn extract_models(source: &str, tree: &Tree, global_aliases: &DashMap<String, ColumnArgs>) -> Vec<Model> {
     let bytes = source.as_bytes();
     let root = tree.root_node();
 
     let mut sym = build_symbol_table(root, bytes);
     collect_annotated_aliases(root, bytes, &mut sym);
+
+    // For imported names not resolved locally, fall back to the global alias index.
+    // This handles `from common import UUIDPk` where UUIDPk is defined in another file.
+    for name in sym.bindings.keys().cloned().collect::<Vec<_>>() {
+        if let Some(args) = global_aliases.get(&name) {
+            sym.annotated_column_args.entry(name).or_insert_with(|| args.clone());
+        }
+    }
 
     // First pass: collect declarative bases defined in this file
     let mut bases = BaseRegistry::default();
@@ -1159,6 +1178,10 @@ mod tests {
         SymbolTable::default()
     }
 
+    fn extract(source: &str, tree: &Tree) -> Vec<Model> {
+        extract_models(source, tree, &DashMap::new())
+    }
+
     // ── Symbol table ──────────────────────────────────────────────────────────
 
     #[test]
@@ -1291,7 +1314,7 @@ class User(Base):
     #[test]
     fn extract_simple_model() {
         let tree = parse(SIMPLE_MODEL);
-        let models = extract_models(SIMPLE_MODEL, &tree);
+        let models = extract(SIMPLE_MODEL, &tree);
         assert_eq!(models.len(), 1);
         let m = &models[0];
         assert_eq!(m.name, "User");
@@ -1303,14 +1326,14 @@ class User(Base):
     #[test]
     fn extract_base_not_a_model() {
         let tree = parse(SIMPLE_MODEL);
-        let models = extract_models(SIMPLE_MODEL, &tree);
+        let models = extract(SIMPLE_MODEL, &tree);
         assert!(!models.iter().any(|m| m.name == "Base"));
     }
 
     #[test]
     fn column_primary_key_flag() {
         let tree = parse(SIMPLE_MODEL);
-        let models = extract_models(SIMPLE_MODEL, &tree);
+        let models = extract(SIMPLE_MODEL, &tree);
         let col = &models[0].columns["id"];
         assert!(col.args.primary_key);
     }
@@ -1328,7 +1351,7 @@ class Post(Base):
     body: Mapped[Optional[str]] = mapped_column(String)
 "#;
         let tree = parse(src);
-        let models = extract_models(src, &tree);
+        let models = extract(src, &tree);
         let m = &models[0];
         assert!(!m.columns["id"].args.nullable, "int is non-nullable");
         assert!(!m.columns["title"].args.nullable, "str is non-nullable");
@@ -1347,7 +1370,7 @@ class User(Base):
     posts: Mapped[List["Post"]] = relationship("Post", back_populates="author")
 "#;
         let tree = parse(src);
-        let models = extract_models(src, &tree);
+        let models = extract(src, &tree);
         let rel = models[0]
             .relationships
             .get("posts")
@@ -1368,7 +1391,7 @@ class Post(Base):
     author_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"))
 "#;
         let tree = parse(src);
-        let models = extract_models(src, &tree);
+        let models = extract(src, &tree);
         let col = &models[0].columns["author_id"];
         let fk = col.foreign_key.as_ref().expect("foreign key");
         assert_eq!(fk.table, "users");
@@ -1387,7 +1410,7 @@ class Post(Base):
     title: Mapped[str] = mapped_column(String(200))
 "#;
         let tree = parse(src);
-        let models = extract_models(src, &tree);
+        let models = extract(src, &tree);
         assert_eq!(models[0].duplicate_columns.len(), 1);
         assert_eq!(models[0].duplicate_columns[0].0, "title");
     }
@@ -1396,7 +1419,7 @@ class Post(Base):
     fn no_models_on_plain_python() {
         let src = "x = 1\ndef foo(): pass\n";
         let tree = parse(src);
-        let models = extract_models(src, &tree);
+        let models = extract(src, &tree);
         assert!(models.is_empty());
     }
 
@@ -1418,7 +1441,7 @@ class Address(Base):
     id: Mapped[UUIDPk]
 "#;
         let tree = parse(src);
-        let models = extract_models(src, &tree);
+        let models = extract(src, &tree);
         assert_eq!(models.len(), 1);
         let col = &models[0].columns["id"];
         assert!(col.args.primary_key, "id should be detected as primary key via type alias");
@@ -1441,7 +1464,7 @@ class Item(Base):
     note: Mapped[NullableStr]
 "#;
         let tree = parse(src);
-        let models = extract_models(src, &tree);
+        let models = extract(src, &tree);
         let col = &models[0].columns["note"];
         assert!(col.args.nullable, "nullable=True from alias should be respected");
     }
@@ -1460,7 +1483,7 @@ class Post(Base):
     id: Mapped[Annotated[int, mapped_column(primary_key=True)]]
 "#;
         let tree = parse(src);
-        let models = extract_models(src, &tree);
+        let models = extract(src, &tree);
         let col = &models[0].columns["id"];
         assert!(col.args.primary_key, "primary_key from inline Annotated annotation");
     }
@@ -1483,7 +1506,7 @@ class ProjectDocument(Base):
     id: Mapped[UUIDPk]
 "#;
         let tree = parse(src);
-        let models = extract_models(src, &tree);
+        let models = extract(src, &tree);
         assert_eq!(models.len(), 1);
         let col = &models[0].columns["id"];
         assert!(
@@ -1509,12 +1532,46 @@ class Order(Base):
     id: Mapped[UUIDPk]
 "#;
         let tree = parse(src);
-        let models = extract_models(src, &tree);
+        let models = extract(src, &tree);
         assert_eq!(models.len(), 1);
         let col = &models[0].columns["id"];
         assert!(
             col.args.primary_key,
             "id should be primary key via custom Annotated alias Ann2"
+        );
+    }
+
+    #[test]
+    fn pk_from_imported_annotated_alias() {
+        // UUIDPk defined in another file (common/columns.py) and imported here.
+        // Simulates: from app.common.db.columns import UUIDPk
+        let global: DashMap<String, ColumnArgs> = DashMap::new();
+        global.insert(
+            "UUIDPk".to_string(),
+            ColumnArgs {
+                primary_key: true,
+                ..ColumnArgs::default()
+            },
+        );
+
+        let src = r#"
+import uuid
+from sqlalchemy.orm import DeclarativeBase, Mapped
+from app.common.db.columns import UUIDPk
+
+class Base(DeclarativeBase): pass
+
+class Project(Base):
+    __tablename__ = "projects"
+    id: Mapped[UUIDPk]
+"#;
+        let tree = parse(src);
+        let models = extract_models(src, &tree, &global);
+        assert_eq!(models.len(), 1);
+        let col = &models[0].columns["id"];
+        assert!(
+            col.args.primary_key,
+            "id should be primary key via imported UUIDPk alias"
         );
     }
 }

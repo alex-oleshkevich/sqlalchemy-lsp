@@ -9,13 +9,16 @@ use tower_lsp_server::{Client, ls_types::Uri};
 use crate::{
     alembic::{MigrationFile, extractor::extract_migration},
     features::{alembic_diag, f01, f02},
-    model::types::Model,
+    model::types::{ColumnArgs, Model},
     parsing::{
-        extractor::extract_models,
+        extractor::{extract_annotated_aliases, extract_models},
         python::{has_alembic_indicators, has_sqlalchemy_indicators},
     },
     state::WorkspaceState,
 };
+
+type AliasMap = std::collections::HashMap<String, ColumnArgs>;
+type Pass1Result = Option<(tree_sitter::Tree, Vec<Model>, Option<MigrationFile>, AliasMap)>;
 
 // ── CLI headless scan ─────────────────────────────────────────────────────────
 
@@ -31,6 +34,25 @@ pub fn build_workspace_index(root: &Path) -> Arc<WorkspaceState> {
         .set_language(&tree_sitter_python::LANGUAGE.into())
         .expect("load python grammar");
 
+    // Pass A: collect annotated type aliases from all SA files into the global index.
+    // This must run before Pass B so imported aliases (e.g. `from common import UUIDPk`)
+    // are available regardless of filesystem ordering.
+    for path in &py_files {
+        let Ok(source) = std::fs::read_to_string(path) else {
+            continue;
+        };
+        if !has_sqlalchemy_indicators(&source) {
+            continue;
+        }
+        let Some(tree) = parser.parse(&source, None) else {
+            continue;
+        };
+        for (name, args) in extract_annotated_aliases(&source, &tree) {
+            state.annotated_alias_index.insert(name, args);
+        }
+    }
+
+    // Pass B: extract models (with global aliases resolved) and migration metadata.
     for path in &py_files {
         let Ok(source) = std::fs::read_to_string(path) else {
             continue;
@@ -46,7 +68,7 @@ pub fn build_workspace_index(root: &Path) -> Arc<WorkspaceState> {
         };
 
         let models = if has_sqlalchemy_indicators(&source) {
-            extract_models(&source, &tree)
+            extract_models(&source, &tree, &state.annotated_alias_index)
         } else {
             vec![]
         };
@@ -132,17 +154,37 @@ pub fn collect_py_files(root: &Path) -> Vec<PathBuf> {
 /// CPU-bound work runs in a blocking thread via `spawn_blocking`.
 pub async fn run_pass1(uri: Uri, source: String, state: &Arc<WorkspaceState>, client: &Client) {
     let src = source;
+    let alias_snapshot: AliasMap = state
+        .annotated_alias_index
+        .iter()
+        .map(|e| (e.key().clone(), e.value().clone()))
+        .collect();
 
-    let result = task::spawn_blocking(
-        move || -> Option<(tree_sitter::Tree, Vec<Model>, Option<MigrationFile>)> {
+    let result = task::spawn_blocking(move || -> Pass1Result {
             let mut parser = tree_sitter::Parser::new();
             parser
                 .set_language(&tree_sitter_python::LANGUAGE.into())
                 .ok()?;
             let tree = parser.parse(src.as_str(), None)?;
 
+            let local_aliases: AliasMap = if has_sqlalchemy_indicators(&src) {
+                extract_annotated_aliases(&src, &tree)
+            } else {
+                AliasMap::new()
+            };
+
+            // Merge local aliases into the snapshot so this file's own definitions
+            // are available during extraction (relevant when both defined and used in same file).
+            let mut merged = alias_snapshot;
+            for (k, v) in &local_aliases {
+                merged.entry(k.clone()).or_insert_with(|| v.clone());
+            }
+
+            let global_map: dashmap::DashMap<String, ColumnArgs> =
+                merged.into_iter().collect();
+
             let models = if has_sqlalchemy_indicators(&src) {
-                extract_models(&src, &tree)
+                extract_models(&src, &tree, &global_map)
             } else {
                 vec![]
             };
@@ -153,13 +195,17 @@ pub async fn run_pass1(uri: Uri, source: String, state: &Arc<WorkspaceState>, cl
                 None
             };
 
-            Some((tree, models, migration))
+            Some((tree, models, migration, local_aliases))
         },
     )
     .await;
 
     match result {
-        Ok(Some((tree, models, migration))) => {
+        Ok(Some((tree, models, migration, local_aliases))) => {
+            // Update global alias index with any new aliases defined in this file.
+            for (name, args) in local_aliases {
+                state.annotated_alias_index.insert(name, args);
+            }
             state.parse_trees.insert(uri.clone(), tree);
             state.update_file(&uri, models);
             if let Some(mf) = migration {

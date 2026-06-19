@@ -596,7 +596,7 @@ def downgrade(): pass
                 .set_language(&tree_sitter_python::LANGUAGE.into())
                 .unwrap();
             let tree = parser.parse(&src, None).unwrap();
-            let models = extract_models(&src, &tree);
+            let models = extract_models(&src, &tree, &dashmap::DashMap::new());
             let u: tower_lsp_server::ls_types::Uri =
                 format!("file://{}", path.display()).parse().unwrap();
             state.update_file(&u, models);

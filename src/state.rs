@@ -3,7 +3,7 @@ use tower_lsp_server::ls_types::{Diagnostic, Uri};
 use tree_sitter::Tree;
 
 use crate::alembic::MigrationFile;
-use crate::model::types::{Model, ModelLocation};
+use crate::model::types::{ColumnArgs, Model, ModelLocation};
 
 pub type FileModels = Vec<Model>;
 
@@ -20,6 +20,10 @@ pub struct WorkspaceState {
     pub diagnostics: DashMap<Uri, Vec<Diagnostic>>,
     /// URIs of files currently open in the editor (unsaved overlay takes precedence over disk).
     pub open_uris: DashMap<Uri, ()>,
+    /// Global annotated type-alias index: alias name → ColumnArgs.
+    /// Populated from every file's `X = Annotated[T, mapped_column(...)]` definitions.
+    /// Lets model files resolve imported type aliases (e.g. `from common import UUIDPk`).
+    pub annotated_alias_index: DashMap<String, ColumnArgs>,
 }
 
 impl WorkspaceState {
@@ -34,6 +38,7 @@ impl WorkspaceState {
             revision_index: DashMap::new(),
             diagnostics: DashMap::new(),
             open_uris: DashMap::new(),
+            annotated_alias_index: DashMap::new(),
         }
     }
 
