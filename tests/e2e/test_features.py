@@ -635,6 +635,41 @@ async def test_annotated_alias_pk_produces_no_w104(
     assert w104_diags == [], f"Unexpected W104: {w104_diags}"
 
 
+_TYPING_ANNOTATED_ALIAS_TEXT = """\
+from __future__ import annotations
+import typing
+import uuid
+import sqlalchemy as sa
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+
+UUIDPk = typing.Annotated[uuid.UUID, mapped_column(sa.UUID(), primary_key=True, default=uuid.uuid4)]
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class ProjectDocument(Base):
+    __tablename__ = "project_documents"
+    id: Mapped[UUIDPk]
+"""
+
+
+async def test_typing_annotated_alias_pk_produces_no_w104(
+    client: LanguageClient, tmp_path: pathlib.Path
+):
+    """typing.Annotated[...] alias with primary_key=True must not fire SQLA-W104."""
+    uri = workspace_uri(tmp_path, "models", "typing_alias.py")
+    await _open_and_wait(client, uri, _TYPING_ANNOTATED_ALIAS_TEXT)
+
+    diags = client.diagnostics.get(uri, [])
+    w104_diags = [d for d in diags if d.code == "SQLA-W104"]
+    assert w104_diags == [], (
+        f"False W104 for typing.Annotated PK alias: {w104_diags}"
+    )
+
+
 async def test_annotated_alias_hover_shows_column_info(
     client: LanguageClient, tmp_path: pathlib.Path
 ):
@@ -747,6 +782,47 @@ async def test_hover_shows_primary_key_label(
 
 
 # ── Hover — multi-model same file ────────────────────────────────────────────
+
+
+async def test_hover_model_name_in_non_model_file(
+    client: LanguageClient, tmp_path: pathlib.Path
+):
+    """Hovering on a model class name in a router/service file returns the model card.
+
+    The server indexes models from the workspace; when the user hovers over 'User'
+    in a file that does not define any models (e.g. a router), the fallback
+    identifier lookup should return User's model card.
+    """
+    # Open model files so they are indexed
+    await _open_all_models(client, tmp_path)
+
+    # A simple router file that references User but defines no models
+    router_text = (
+        "from sqlalchemy.orm import Session\n"
+        "from models.user import User\n"
+        "\n"
+        "def get_user(db: Session, user_id: int) -> User:\n"
+        "    return db.query(User).filter_by(id=user_id).first()\n"
+    )
+    router_uri = workspace_uri(tmp_path, "api", "router.py")
+    await _open_and_wait(client, router_uri, router_text)
+
+    # Hover on "User" in the return type annotation (line 3)
+    pos = _find(router_text, "-> User")
+    user_pos = types.Position(line=pos.line, character=pos.character + 3)
+
+    result = await client.text_document_hover_async(
+        types.HoverParams(
+            text_document=types.TextDocumentIdentifier(uri=router_uri),
+            position=user_pos,
+        )
+    )
+    assert result is not None, "expected hover card for User in router file"
+    content = result.contents
+    assert isinstance(content, types.MarkupContent), (
+        f"expected MarkupContent, got {type(content)}"
+    )
+    assert "User" in content.value, f"expected User model card, got: {content.value!r}"
 
 
 async def test_hover_two_models_same_file_returns_distinct_cards(

@@ -441,109 +441,164 @@ fn model_card(model: &Model, state: &WorkspaceState) -> String {
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
+/// Extract the Python identifier (word) at `pos` from `source` and return it
+/// together with its character range on the line. Returns `None` if the cursor
+/// is not on an identifier character.
+fn word_at(source: &str, pos: Position) -> Option<(String, crate::model::types::Range)> {
+    let line = source.lines().nth(pos.line as usize)?;
+    let col = pos.character as usize;
+    if col > line.len() {
+        return None;
+    }
+    let start = line[..col]
+        .rfind(|c: char| !c.is_alphanumeric() && c != '_')
+        .map(|i| i + 1)
+        .unwrap_or(0);
+    let rest = &line[col..];
+    let end = col
+        + rest
+            .find(|c: char| !c.is_alphanumeric() && c != '_')
+            .unwrap_or(rest.len());
+    if start >= end {
+        return None;
+    }
+    let word = &line[start..end];
+    // Must start with a letter or underscore (not a number)
+    if !word.starts_with(|c: char| c.is_alphabetic() || c == '_') {
+        return None;
+    }
+    Some((
+        word.to_string(),
+        crate::model::types::Range {
+            start_line: pos.line,
+            start_col: start as u32,
+            end_line: pos.line,
+            end_col: end as u32,
+        },
+    ))
+}
+
 /// Return a hover card for the construct at `pos`, or `None` (REQ-HOV-09).
 pub fn provide_hover(uri: &Uri, pos: Position, state: &WorkspaceState) -> Option<Hover> {
-    let file_models = state.file_models.get(uri)?;
-    let models = file_models.clone();
+    // ── Model-file dispatch: sub-ranges take precedence over model name ─────
+    if let Some(models) = state.file_models.get(uri).map(|fm| fm.clone()) {
+        for model in &models {
+            // ── REQ-HOV-01 specificity: test innermost ranges first ───────────────
 
-    for model in &models {
-        // ── REQ-HOV-01 specificity: test innermost ranges first ───────────────
+            // 1. Test relationship sub-ranges (back_populates, cascade) — most specific
+            for rel in model.relationships.values() {
+                if let (Some(bp), Some(bp_range)) =
+                    (&rel.back_populates, &rel.back_populates_range)
+                {
+                    if pos_in(pos, *bp_range) {
+                        let md = back_populates_card(&rel.target_model, bp, state);
+                        return Some(Hover {
+                            contents: HoverContents::Markup(MarkupContent {
+                                kind: MarkupKind::Markdown,
+                                value: md,
+                            }),
+                            range: Some(model_range(*bp_range)),
+                        });
+                    }
+                }
+                if let (Some(cas), Some(cas_range)) = (&rel.cascade, &rel.cascade_range) {
+                    if pos_in(pos, *cas_range) {
+                        let md = cascade_card(cas);
+                        return Some(Hover {
+                            contents: HoverContents::Markup(MarkupContent {
+                                kind: MarkupKind::Markdown,
+                                value: md,
+                            }),
+                            range: Some(model_range(*cas_range)),
+                        });
+                    }
+                }
+            }
 
-        // 1. Test relationship sub-ranges (back_populates, cascade) — most specific
-        for rel in model.relationships.values() {
-            // back_populates value range
-            if let (Some(bp), Some(bp_range)) = (&rel.back_populates, &rel.back_populates_range) {
-                if pos_in(pos, *bp_range) {
-                    let md = back_populates_card(&rel.target_model, bp, state);
+            // 2. Test FK-string ranges inside columns (more specific than column name)
+            for col in model.columns.values() {
+                if let Some(ref fk) = col.foreign_key {
+                    if pos_in(pos, fk.range) {
+                        let md = fk_string_card(&fk.table, &fk.column, state);
+                        return Some(Hover {
+                            contents: HoverContents::Markup(MarkupContent {
+                                kind: MarkupKind::Markdown,
+                                value: md,
+                            }),
+                            range: Some(model_range(fk.range)),
+                        });
+                    }
+                }
+            }
+
+            // 3. Test column name ranges
+            for (col_name, col) in &model.columns {
+                if pos_in(pos, col.name_range) {
+                    let md = column_card(model, col_name, state);
+                    if md.is_empty() {
+                        continue;
+                    }
                     return Some(Hover {
                         contents: HoverContents::Markup(MarkupContent {
                             kind: MarkupKind::Markdown,
                             value: md,
                         }),
-                        range: Some(model_range(*bp_range)),
+                        range: Some(model_range(col.name_range)),
                     });
                 }
             }
-            // cascade value range
-            if let (Some(cas), Some(cas_range)) = (&rel.cascade, &rel.cascade_range) {
-                if pos_in(pos, *cas_range) {
-                    let md = cascade_card(cas);
+
+            // 4. Test relationship name ranges
+            for (rel_name, rel) in &model.relationships {
+                if pos_in(pos, rel.name_range) {
+                    let md = relationship_card(model, rel_name, state);
+                    if md.is_empty() {
+                        continue;
+                    }
                     return Some(Hover {
                         contents: HoverContents::Markup(MarkupContent {
                             kind: MarkupKind::Markdown,
                             value: md,
                         }),
-                        range: Some(model_range(*cas_range)),
+                        range: Some(model_range(rel.name_range)),
                     });
                 }
             }
-        }
 
-        // 2. Test FK-string ranges inside columns (more specific than column name)
-        for col in model.columns.values() {
-            if let Some(ref fk) = col.foreign_key {
-                if pos_in(pos, fk.range) {
-                    let md = fk_string_card(&fk.table, &fk.column, state);
-                    return Some(Hover {
-                        contents: HoverContents::Markup(MarkupContent {
-                            kind: MarkupKind::Markdown,
-                            value: md,
-                        }),
-                        range: Some(model_range(fk.range)),
-                    });
-                }
-            }
-        }
-
-        // 3. Test column name ranges
-        for (col_name, col) in &model.columns {
-            if pos_in(pos, col.name_range) {
-                let md = column_card(model, col_name, state);
-                if md.is_empty() {
-                    continue;
-                }
+            // 5. Test model name range (least specific)
+            if pos_in(pos, model.name_range) {
+                let md = model_card(model, state);
                 return Some(Hover {
                     contents: HoverContents::Markup(MarkupContent {
                         kind: MarkupKind::Markdown,
                         value: md,
                     }),
-                    range: Some(model_range(col.name_range)),
+                    range: Some(model_range(model.name_range)),
                 });
             }
-        }
-
-        // 4. Test relationship name ranges
-        for (rel_name, rel) in &model.relationships {
-            if pos_in(pos, rel.name_range) {
-                let md = relationship_card(model, rel_name, state);
-                if md.is_empty() {
-                    continue;
-                }
-                return Some(Hover {
-                    contents: HoverContents::Markup(MarkupContent {
-                        kind: MarkupKind::Markdown,
-                        value: md,
-                    }),
-                    range: Some(model_range(rel.name_range)),
-                });
-            }
-        }
-
-        // 5. Test model name range (least specific)
-        if pos_in(pos, model.name_range) {
-            let md = model_card(model, state);
-            return Some(Hover {
-                contents: HoverContents::Markup(MarkupContent {
-                    kind: MarkupKind::Markdown,
-                    value: md,
-                }),
-                range: Some(model_range(model.name_range)),
-            });
         }
     }
 
-    // REQ-HOV-09: nothing SQLAlchemy-specific found → return null
-    None
+    // ── Fallback: identifier at cursor → model_index lookup ────────────────────
+    // Enables hover on model class name references in router/service/test files
+    // (files that reference but do not define SA models).
+    let source = state.file_sources.get(uri)?;
+    let (ident, ident_range) = word_at(&source, pos)?;
+    let model_uri = {
+        let loc = state.model_index.get(&ident)?;
+        loc.uri.clone()
+    };
+    let model = {
+        let file_models = state.file_models.get(&model_uri)?;
+        file_models.iter().find(|m| m.name == ident)?.clone()
+    };
+    Some(Hover {
+        contents: HoverContents::Markup(MarkupContent {
+            kind: MarkupKind::Markdown,
+            value: model_card(&model, state),
+        }),
+        range: Some(model_range(ident_range)),
+    })
 }
 
 // ── Unit tests ─────────────────────────────────────────────────────────────────
@@ -1070,5 +1125,45 @@ mod tests {
 
         // Between the two class names → None
         assert!(provide_hover(&u, pos(5, 0), &state).is_none());
+    }
+
+    // ── Identifier fallback: hover works in non-model files ───────────────────
+
+    #[test]
+    fn hover_model_name_in_router_file_returns_model_card() {
+        let state = WorkspaceState::new();
+
+        // Model is defined in models.py
+        let model_uri = uri("file:///models.py");
+        let user = simple_model("User", "users", "id");
+        state.update_file(&model_uri, vec![user]);
+
+        // Router file references User but has no models of its own
+        let router_uri = uri("file:///router.py");
+        let router_src = "from models import User\n\ndef get_user() -> User:\n    pass\n";
+        state
+            .file_sources
+            .insert(router_uri.clone(), router_src.to_string());
+
+        // Hover on "User" in the return type annotation (line 2, col 19)
+        let hover = provide_hover(&router_uri, pos(2, 19), &state).unwrap();
+        let md = match hover.contents {
+            HoverContents::Markup(mc) => mc.value,
+            _ => panic!("expected markup"),
+        };
+        assert!(md.contains("User"), "expected User model card, got: {md}");
+        assert!(md.contains("users"), "expected table name in card, got: {md}");
+    }
+
+    #[test]
+    fn hover_on_non_model_identifier_in_router_file_returns_none() {
+        let state = WorkspaceState::new();
+        let router_uri = uri("file:///router.py");
+        let router_src = "def handle(request):\n    pass\n";
+        state
+            .file_sources
+            .insert(router_uri.clone(), router_src.to_string());
+        // "handle" and "request" are not model names → None
+        assert!(provide_hover(&router_uri, pos(0, 4), &state).is_none());
     }
 }

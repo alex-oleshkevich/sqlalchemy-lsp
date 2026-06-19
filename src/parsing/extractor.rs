@@ -296,9 +296,8 @@ fn collect_annotated_aliases(root: Node, source: &[u8], st: &mut SymbolTable) {
         let Some(right) = stmt.child_by_field_name("right") else {
             continue;
         };
-        // Fast text check before tree walk
-        let rhs_text = node_text(right, source);
-        if !rhs_text.starts_with("Annotated[") && !rhs_text.starts_with("Ann[") {
+        // Use import-aware resolution: handles Annotated, typing.Annotated, any alias
+        if !rhs_is_annotated_subscript(right, source, st) {
             continue;
         }
         if let Some(mc_args) = find_mapped_column_call_in_subtree(right, source) {
@@ -306,6 +305,29 @@ fn collect_annotated_aliases(root: Node, source: &[u8], st: &mut SymbolTable) {
             st.annotated_column_args.insert(name, col_args);
         }
     }
+}
+
+/// Returns true if `node` is a subscript whose base name resolves to `typing.Annotated`
+/// via the import table (handles `Annotated[...]`, `typing.Annotated[...]`, custom aliases).
+fn rhs_is_annotated_subscript(node: Node, source: &[u8], sym: &SymbolTable) -> bool {
+    if node.kind() != "subscript" {
+        return false;
+    }
+    let Some(value) = node.child_by_field_name("value") else {
+        return false;
+    };
+    let name = node_text(value, source);
+    is_annotated_name(name, sym)
+}
+
+/// Returns true if `name` is a bare or qualified reference to `typing.Annotated`.
+fn is_annotated_name(name: &str, sym: &SymbolTable) -> bool {
+    // Fast path: common unaliased/short names
+    if matches!(name, "Annotated" | "Ann") {
+        return true;
+    }
+    // Resolve via import table: typing.Annotated, t.Annotated (import typing as t), etc.
+    matches!(sym.resolve(name).as_deref(), Some("typing.Annotated"))
 }
 
 /// Depth-first search for a `mapped_column(...)` call anywhere in `node`'s subtree.
@@ -1002,7 +1024,7 @@ pub fn parse_inner_type(type_str: &str, sym: &SymbolTable) -> MappedType {
         let model = strip_quotes(inner.trim());
         return MappedType::List(model.to_string());
     }
-    if let Some(inner) = strip_annotated(s) {
+    if let Some(inner) = strip_annotated(s, sym) {
         return parse_inner_type(inner, sym);
     }
     if (s.starts_with('"') && s.ends_with('"')) || (s.starts_with('\'') && s.ends_with('\'')) {
@@ -1093,18 +1115,18 @@ fn strip_union_none(s: &str) -> Option<&str> {
     None
 }
 
-fn strip_annotated(s: &str) -> Option<&str> {
-    for prefix in &["Annotated[", "Ann["] {
-        if s.starts_with(prefix) && s.ends_with(']') {
-            let inner = &s[prefix.len()..s.len() - 1];
-            return Some(
-                find_top_level_comma(inner)
-                    .map(|i| inner[..i].trim())
-                    .unwrap_or(inner.trim()),
-            );
-        }
+fn strip_annotated<'a>(s: &'a str, sym: &SymbolTable) -> Option<&'a str> {
+    let open = s.find('[')?;
+    let base = s[..open].trim();
+    if !is_annotated_name(base, sym) || !s.ends_with(']') {
+        return None;
     }
-    None
+    let inner = &s[open + 1..s.len() - 1];
+    Some(
+        find_top_level_comma(inner)
+            .map(|i| inner[..i].trim())
+            .unwrap_or(inner.trim()),
+    )
 }
 
 fn find_top_level_comma(s: &str) -> Option<usize> {
@@ -1443,5 +1465,58 @@ class Post(Base):
         let models = extract_models(src, &tree);
         let col = &models[0].columns["id"];
         assert!(col.args.primary_key, "primary_key from inline Annotated annotation");
+    }
+
+    #[test]
+    fn pk_from_typing_annotated_qualified() {
+        // typing.Annotated[...] (qualified, not imported directly)
+        let src = r#"
+import typing
+import uuid
+import sqlalchemy as sa
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+UUIDPk = typing.Annotated[uuid.UUID, mapped_column(sa.UUID(), primary_key=True, default=uuid.uuid4)]
+
+class Base(DeclarativeBase): pass
+
+class ProjectDocument(Base):
+    __tablename__ = "project_documents"
+    id: Mapped[UUIDPk]
+"#;
+        let tree = parse(src);
+        let models = extract_models(src, &tree);
+        assert_eq!(models.len(), 1);
+        let col = &models[0].columns["id"];
+        assert!(
+            col.args.primary_key,
+            "id should be primary key via typing.Annotated alias"
+        );
+    }
+
+    #[test]
+    fn pk_from_annotated_custom_alias() {
+        // from typing import Annotated as Ann2
+        let src = r#"
+from typing import Annotated as Ann2
+from uuid import UUID
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+UUIDPk = Ann2[UUID, mapped_column(primary_key=True)]
+
+class Base(DeclarativeBase): pass
+
+class Order(Base):
+    __tablename__ = "orders"
+    id: Mapped[UUIDPk]
+"#;
+        let tree = parse(src);
+        let models = extract_models(src, &tree);
+        assert_eq!(models.len(), 1);
+        let col = &models[0].columns["id"];
+        assert!(
+            col.args.primary_key,
+            "id should be primary key via custom Annotated alias Ann2"
+        );
     }
 }
