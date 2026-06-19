@@ -86,6 +86,14 @@ fn check_model(
                 return model_location(&rel.target_model, state);
             }
         }
+        for fk_ref in &rel.string_fk_refs {
+            if pos_in(pos, fk_ref.model_range) {
+                return model_location(&fk_ref.model, state);
+            }
+            if pos_in(pos, fk_ref.column_range) {
+                return column_location(&fk_ref.model, &fk_ref.column, state);
+            }
+        }
     }
 
     for col in model.columns.values() {
@@ -207,7 +215,7 @@ fn resolve_column(table: &str, column: &str, state: &WorkspaceState) -> Option<L
 mod tests {
     use super::*;
     use crate::model::types::{
-        Column, ColumnArgs, ForeignKeyRef, MappedType, Range, Relationship, TableArg,
+        Column, ColumnArgs, ForeignKeyRef, MappedType, Range, Relationship, StringFkRef, TableArg,
     };
     use crate::state::WorkspaceState;
     use std::collections::HashMap;
@@ -344,6 +352,7 @@ mod tests {
             backref: None,
             remote_side: false,
             has_foreign_keys: false,
+            string_fk_refs: vec![],
             viewonly: None,
             name_range: rng(6, 4, 6, 10),
             full_range: rng(6, 0, 6, 50),
@@ -380,6 +389,7 @@ mod tests {
             backref: None,
             remote_side: false,
             has_foreign_keys: false,
+            string_fk_refs: vec![],
             viewonly: None,
             name_range: rng(8, 4, 8, 9),
             full_range: rng(8, 0, 8, 50),
@@ -406,6 +416,7 @@ mod tests {
             backref: None,
             remote_side: false,
             has_foreign_keys: false,
+            string_fk_refs: vec![],
             viewonly: None,
             name_range: rng(6, 4, 6, 10),
             full_range: rng(6, 0, 6, 60),
@@ -473,7 +484,60 @@ mod tests {
     fn req_def_10_no_sa_construct_returns_none() {
         let state = WorkspaceState::new();
         let u = uri("file:///plain.py");
-        // No models registered → nothing to resolve
         assert!(resolve_definition(&u, "", pos(0, 5), &state).is_none());
+    }
+
+    // ── REQ-DEF-11: foreign_keys string model ref → model class ──────────────
+
+    #[test]
+    fn req_def_11_string_fk_model_ref_resolves() {
+        let state = WorkspaceState::new();
+
+        let cc_u = uri("file:///credit_check.py");
+        let cc = simple_model("CreditCheck", "credit_checks", &[("applicant_id", rng(4, 4, 4, 16))]);
+        state.update_file(&cc_u, vec![cc]);
+
+        let app_u = uri("file:///applicant.py");
+        // foreign_keys="[CreditCheck.applicant_id]" parsed into string_fk_refs
+        let fk_ref = StringFkRef {
+            model: "CreditCheck".into(),
+            column: "applicant_id".into(),
+            model_range: rng(8, 55, 8, 66),
+            column_range: rng(8, 67, 8, 79),
+        };
+        let rel = Relationship {
+            name: "check".into(),
+            target_model: "CreditCheck".into(),
+            explicit_target: None,
+            annotation_target: None,
+            back_populates: None,
+            lazy: None,
+            uselist: None,
+            secondary: None,
+            cascade: None,
+            is_list: false,
+            backref: None,
+            remote_side: false,
+            has_foreign_keys: true,
+            string_fk_refs: vec![fk_ref],
+            viewonly: None,
+            name_range: rng(8, 4, 8, 9),
+            full_range: rng(8, 0, 8, 90),
+            target_range: None,
+            back_populates_range: None,
+            cascade_range: None,
+        };
+        let mut app = simple_model("Applicant", "applicants", &[]);
+        app.relationships.insert("check".into(), rel);
+        state.update_file(&app_u, vec![app]);
+
+        // cursor on model name "CreditCheck" inside the string
+        let loc = resolve_definition(&app_u, "", pos(8, 60), &state).unwrap();
+        assert_eq!(loc.uri, cc_u);
+
+        // cursor on column name "applicant_id" inside the string
+        let col_loc = resolve_definition(&app_u, "", pos(8, 70), &state).unwrap();
+        assert_eq!(col_loc.uri, cc_u);
+        assert_eq!(col_loc.range.start.line, 4);
     }
 }

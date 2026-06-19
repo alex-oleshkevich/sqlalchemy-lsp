@@ -115,6 +115,15 @@ pub struct ForeignKeyRef {
     pub range: Range,
 }
 
+/// A `Model.column` reference parsed from a `foreign_keys="[Model.col]"` string.
+#[derive(Clone, Debug, Default)]
+pub struct StringFkRef {
+    pub model: String,
+    pub column: String,
+    pub model_range: Range,
+    pub column_range: Range,
+}
+
 /// A `relationship(...)` attribute wiring two models together.
 #[derive(Clone, Debug)]
 pub struct Relationship {
@@ -136,6 +145,8 @@ pub struct Relationship {
     pub remote_side: bool,
     /// True when `foreign_keys=` is present (disambiguates multi-FK relationships).
     pub has_foreign_keys: bool,
+    /// Parsed `Model.column` references from `foreign_keys="[Model.col, ...]"`.
+    pub string_fk_refs: Vec<StringFkRef>,
     /// True when `viewonly=True` is set.
     pub viewonly: Option<bool>,
     pub name_range: Range,

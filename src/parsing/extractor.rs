@@ -7,7 +7,8 @@ use tree_sitter::{Node, Tree};
 
 use super::python::{node_text, ts_range};
 use crate::model::types::{
-    Column, ColumnArgs, ForeignKeyRef, MappedType, Model, Range, Relationship, TableArg,
+    Column, ColumnArgs, ForeignKeyRef, MappedType, Model, Range, Relationship, StringFkRef,
+    TableArg,
 };
 
 // ── Symbol table ─────────────────────────────────────────────────────────────
@@ -720,6 +721,7 @@ fn try_extract_relationship(
         backref,
         remote_side,
         has_foreign_keys,
+        string_fk_refs,
         viewonly,
     } = parse_relationship_args(&args_node, source);
 
@@ -742,6 +744,7 @@ fn try_extract_relationship(
         backref,
         remote_side,
         has_foreign_keys,
+        string_fk_refs,
         viewonly,
         name_range,
         full_range: ts_range(*assign),
@@ -775,6 +778,7 @@ struct RelArgs {
     backref: Option<String>,
     remote_side: bool,
     has_foreign_keys: bool,
+    string_fk_refs: Vec<StringFkRef>,
     viewonly: Option<bool>,
 }
 
@@ -791,6 +795,7 @@ fn parse_relationship_args(args: &Node, source: &[u8]) -> RelArgs {
     let mut backref: Option<String> = None;
     let mut remote_side = false;
     let mut has_foreign_keys = false;
+    let mut string_fk_refs: Vec<StringFkRef> = vec![];
     let mut viewonly: Option<bool> = None;
     let mut positional = 0usize;
 
@@ -818,7 +823,12 @@ fn parse_relationship_args(args: &Node, source: &[u8]) -> RelArgs {
                     }
                     "backref" => backref = Some(strip_string_quotes(val).to_string()),
                     "remote_side" => remote_side = true,
-                    "foreign_keys" => has_foreign_keys = true,
+                    "foreign_keys" => {
+                        has_foreign_keys = true;
+                        if let Some(vn) = val_node {
+                            string_fk_refs = parse_string_fk_refs(vn, source);
+                        }
+                    }
                     "viewonly" => viewonly = Some(val == "True"),
                     _ => {}
                 }
@@ -857,8 +867,71 @@ fn parse_relationship_args(args: &Node, source: &[u8]) -> RelArgs {
         backref,
         remote_side,
         has_foreign_keys,
+        string_fk_refs,
         viewonly,
     }
+}
+
+/// Parse `Model.column` refs from a string-form `foreign_keys` value like `"[CreditCheck.id]"`.
+fn parse_string_fk_refs(val_node: Node, source: &[u8]) -> Vec<StringFkRef> {
+    if val_node.kind() != "string" {
+        return vec![];
+    }
+    let raw = node_text(val_node, source);
+    let quote_len: usize = if raw.starts_with("\"\"\"") || raw.starts_with("'''") {
+        3
+    } else {
+        1
+    };
+    if raw.len() < quote_len * 2 {
+        return vec![];
+    }
+    let content = &raw[quote_len..raw.len() - quote_len];
+    let base_line = val_node.start_position().row as u32;
+    let base_col = val_node.start_position().column as u32 + quote_len as u32;
+
+    let mut refs = Vec::new();
+    let bytes = content.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if !bytes[i].is_ascii_alphanumeric() && bytes[i] != b'_' {
+            i += 1;
+            continue;
+        }
+        let model_start = i;
+        while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
+            i += 1;
+        }
+        let dot_pos = i;
+        if dot_pos >= bytes.len() || bytes[dot_pos] != b'.' {
+            continue;
+        }
+        i = dot_pos + 1;
+        let col_start = i;
+        while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
+            i += 1;
+        }
+        if col_start == i {
+            continue;
+        }
+        refs.push(StringFkRef {
+            model: content[model_start..dot_pos].to_string(),
+            column: content[col_start..i].to_string(),
+            model_range: Range {
+                start_line: base_line,
+                start_col: base_col + model_start as u32,
+                end_line: base_line,
+                end_col: base_col + dot_pos as u32,
+            },
+            column_range: Range {
+                start_line: base_line,
+                start_col: base_col + col_start as u32,
+                end_line: base_line,
+                end_col: base_col + i as u32,
+            },
+        });
+    }
+    refs
 }
 
 // ── Column extraction ─────────────────────────────────────────────────────────
@@ -1606,5 +1679,40 @@ class Project(Base):
             col.args.primary_key,
             "id should be primary key via imported UUIDPk alias"
         );
+    }
+
+    #[test]
+    fn string_fk_refs_parsed_positions() {
+        // `foreign_keys="[CreditCheck.applicant_id]"` on line 9, col 40 of source
+        // The string starts at col 40 (`"`), so content base_col = 41.
+        // Inside content `[CreditCheck.applicant_id]`:
+        //   CreditCheck starts at byte 1, ends at byte 12 → cols 42..53
+        //   applicant_id starts at byte 13, ends at byte 25 → cols 54..66
+        let src = r#"
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+class Base(DeclarativeBase): pass
+
+class Applicant(Base):
+    __tablename__ = "applicants"
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+class CreditCheck(Base):
+    __tablename__ = "credit_checks"
+    applicant_id: Mapped[int] = mapped_column()
+    applicant: Mapped[Applicant | None] = relationship(back_populates="check", foreign_keys="[CreditCheck.applicant_id]")
+"#;
+        let tree = parse(src);
+        let models = extract(src, &tree);
+        let cc = models.iter().find(|m| m.name == "CreditCheck").unwrap();
+        let rel = cc.relationships.get("applicant").unwrap();
+        assert_eq!(rel.string_fk_refs.len(), 1, "should parse one FK ref");
+        let fkr = &rel.string_fk_refs[0];
+        assert_eq!(fkr.model, "CreditCheck");
+        assert_eq!(fkr.column, "applicant_id");
+        // model_range and column_range are on the same line as the relationship
+        assert_eq!(fkr.model_range.start_line, fkr.model_range.end_line);
+        assert_eq!(fkr.column_range.start_line, fkr.column_range.end_line);
+        // model comes before column
+        assert!(fkr.model_range.end_col < fkr.column_range.start_col);
     }
 }

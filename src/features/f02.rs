@@ -558,6 +558,7 @@ mod tests {
             backref: None,
             remote_side: false,
             has_foreign_keys: false,
+            string_fk_refs: vec![],
             viewonly: None,
             name_range: def_range(),
             full_range: def_range(),
