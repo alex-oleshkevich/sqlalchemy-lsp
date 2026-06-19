@@ -580,8 +580,11 @@ pub fn provide_hover(uri: &Uri, pos: Position, state: &WorkspaceState) -> Option
     }
 
     // ── Fallback: identifier at cursor → model_index lookup ────────────────────
-    // Enables hover on model class name references in router/service/test files
-    // (files that reference but do not define SA models).
+    // Only fires in SA model files. Non-model files (routers, services, tests)
+    // return None so the companion Python LSP can provide type hover (P5).
+    if state.file_models.get(uri).is_none_or(|m| m.is_empty()) {
+        return None;
+    }
     let source = state.file_sources.get(uri)?;
     let (ident, ident_range) = word_at(&source, pos)?;
     let model_uri = {
@@ -1131,26 +1134,44 @@ mod tests {
         assert!(provide_hover(&u, pos(5, 0), &state).is_none());
     }
 
-    // ── Identifier fallback: hover works in non-model files ───────────────────
+    // ── Identifier fallback: restricted to SA model files (P5) ──────────────
 
     #[test]
-    fn hover_model_name_in_router_file_returns_model_card() {
+    fn hover_model_name_in_router_file_returns_none() {
+        // Router files have no SA models; we yield to the Python LSP (P5).
         let state = WorkspaceState::new();
 
-        // Model is defined in models.py
         let model_uri = uri("file:///models.py");
         let user = simple_model("User", "users", "id");
         state.update_file(&model_uri, vec![user]);
 
-        // Router file references User but has no models of its own
         let router_uri = uri("file:///router.py");
         let router_src = "from models import User\n\ndef get_user() -> User:\n    pass\n";
         state
             .file_sources
             .insert(router_uri.clone(), router_src.to_string());
 
-        // Hover on "User" in the return type annotation (line 2, col 19)
-        let hover = provide_hover(&router_uri, pos(2, 19), &state).unwrap();
+        // No SA models in this file → None (Python LSP handles it)
+        assert!(provide_hover(&router_uri, pos(2, 19), &state).is_none());
+    }
+
+    #[test]
+    fn hover_model_name_in_model_file_fallback_returns_card() {
+        // Fallback fires in SA model files for references to other models.
+        let state = WorkspaceState::new();
+
+        let user_uri = uri("file:///user.py");
+        let user = simple_model("User", "users", "id");
+        state.update_file(&user_uri, vec![user]);
+
+        let post_uri = uri("file:///post.py");
+        let post = simple_model("Post", "posts", "id");
+        state.update_file(&post_uri, vec![post]);
+        let post_src = "from sqlalchemy.orm import Mapped\nclass Post(Base):\n    author: Mapped[User]\n";
+        state.file_sources.insert(post_uri.clone(), post_src.to_string());
+
+        // "User" at col 19 in line 2 ("    author: Mapped[User]")
+        let hover = provide_hover(&post_uri, pos(2, 19), &state).unwrap();
         let md = match hover.contents {
             HoverContents::Markup(mc) => mc.value,
             _ => panic!("expected markup"),
@@ -1167,7 +1188,6 @@ mod tests {
         state
             .file_sources
             .insert(router_uri.clone(), router_src.to_string());
-        // "handle" and "request" are not model names → None
         assert!(provide_hover(&router_uri, pos(0, 4), &state).is_none());
     }
 }
