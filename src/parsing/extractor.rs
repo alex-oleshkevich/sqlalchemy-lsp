@@ -753,7 +753,9 @@ fn try_extract_relationship(
 
 fn extract_model_from_mapped_type(mt: &MappedType) -> Option<String> {
     match mt {
-        MappedType::List(name) | MappedType::ForwardRef(name) => Some(name.clone()),
+        MappedType::List(name) | MappedType::ForwardRef(name) | MappedType::Unknown(name) => {
+            Some(name.clone())
+        }
         MappedType::Optional(inner) => extract_model_from_mapped_type(inner),
         _ => None,
     }
@@ -1396,6 +1398,37 @@ class Post(Base):
         let fk = col.foreign_key.as_ref().expect("foreign key");
         assert_eq!(fk.table, "users");
         assert_eq!(fk.column, "id");
+    }
+
+    #[test]
+    fn relationship_target_unquoted_same_file() {
+        // Bare class name (no quotes, not in a List) in same file.
+        // Reproduces: `check: Mapped[CreditCheck | None] = relationship(...)` where
+        // CreditCheck is defined in the same file and thus not in sym.bindings.
+        let src = r#"
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+class Base(DeclarativeBase): pass
+
+class ApplicantCheck(Base):
+    __tablename__ = "applicant_checks"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    check: Mapped[CreditCheck | None] = relationship(back_populates="applicant")
+
+class CreditCheck(Base):
+    __tablename__ = "credit_checks"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    applicant: Mapped[ApplicantCheck | None] = relationship(back_populates="check")
+"#;
+        let tree = parse(src);
+        let models = extract(src, &tree);
+        let applicant_check = models.iter().find(|m| m.name == "ApplicantCheck").unwrap();
+        let credit_check = models.iter().find(|m| m.name == "CreditCheck").unwrap();
+
+        let check_rel = applicant_check.relationships.get("check").unwrap();
+        assert_eq!(check_rel.target_model, "CreditCheck");
+
+        let applicant_rel = credit_check.relationships.get("applicant").unwrap();
+        assert_eq!(applicant_rel.target_model, "ApplicantCheck");
     }
 
     #[test]
