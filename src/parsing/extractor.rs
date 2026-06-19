@@ -322,11 +322,6 @@ fn rhs_is_annotated_subscript(node: Node, source: &[u8], sym: &SymbolTable) -> b
 
 /// Returns true if `name` is a bare or qualified reference to `typing.Annotated`.
 fn is_annotated_name(name: &str, sym: &SymbolTable) -> bool {
-    // Fast path: common unaliased/short names
-    if matches!(name, "Annotated" | "Ann") {
-        return true;
-    }
-    // Resolve via import table: typing.Annotated, t.Annotated (import typing as t), etc.
     matches!(sym.resolve(name).as_deref(), Some("typing.Annotated"))
 }
 
@@ -1268,9 +1263,12 @@ mod tests {
 
     #[test]
     fn annotated_unwrap() {
+        let src = "from typing import Annotated\n";
+        let tree = parse(src);
+        let st = build_symbol_table(tree.root_node(), src.as_bytes());
         let mt = parse_mapped_type(
             "Mapped[Annotated[int, mapped_column(primary_key=True)]]",
-            &sym(),
+            &st,
         );
         assert!(matches!(mt, MappedType::Int));
     }
