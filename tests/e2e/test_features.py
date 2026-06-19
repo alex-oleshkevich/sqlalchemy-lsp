@@ -237,7 +237,13 @@ async def test_hover_over_relationship_returns_markdown(
     )
 
     assert result is not None
-    assert result.contents is not None
+    content = result.contents
+    if isinstance(content, types.MarkupContent):
+        assert "Post" in content.value, (
+            f"expected target model 'Post' in relationship hover, got: {content.value!r}"
+        )
+    else:
+        assert content
 
 
 async def test_hover_outside_sa_construct_returns_none(
@@ -267,8 +273,8 @@ async def test_references_on_fk_column_finds_usages(
     models = await _open_all_models(client, tmp_path)
     user_uri, user_text = models["user.py"]
 
-    # References on User.id column (line 23, col 4)
-    pos = _find(user_text, "    id: Mapped[int] = mapped_column(Integer, primary_key=True)")
+    # occurrence=2 skips Profile.id (same text at line 13) and lands on User.id (line 23)
+    pos = _find(user_text, "    id: Mapped[int] = mapped_column(Integer, primary_key=True)", occurrence=2)
     pos = types.Position(line=pos.line, character=4)
 
     result = await client.text_document_references_async(
@@ -280,8 +286,8 @@ async def test_references_on_fk_column_finds_usages(
     )
 
     assert result is not None
-    # Should find FK references to "users.id" in post.py and profile (user.py)
-    assert len(result) >= 1
+    # Declaration + Profile.user_id → "users.id" + Post.author_id → "users.id"
+    assert len(result) >= 2
 
 
 async def test_references_on_model_class_finds_usages(
@@ -303,9 +309,9 @@ async def test_references_on_model_class_finds_usages(
         )
     )
 
-    # May be None if no references found, or a list/tuple
-    if result is not None:
-        assert isinstance(result, (list, tuple))
+    # User is referenced by 2 FK columns + 2 relationships (Post.author, Profile.user) + declaration
+    assert result is not None
+    assert len(result) >= 2
 
 
 # ── Completion ────────────────────────────────────────────────────────────────
@@ -437,18 +443,7 @@ async def test_completion_after_applying_fk_item(
     # The completion should insert "users.id" — verify the label is correct
     assert users_id.label == "users.id"
 
-    # Apply completion by sending didChange with the full text
-    full_last_line = prefix_text.split("\n")[-1][: -len("us")] + users_id.label
-    full_text = "\n".join(prefix_text.split("\n")[:-1] + [full_last_line])
-    client.text_document_did_change(
-        types.DidChangeTextDocumentParams(
-            text_document=types.VersionedTextDocumentIdentifier(uri=new_uri, version=2),
-            content_changes=[types.TextDocumentContentChangeWholeDocument(text=full_text)],
-        )
-    )
-
-    # Verify the resulting text contains "users.id"
-    assert "users.id" in full_text
+    # label == "users.id" is the meaningful assertion — insert_text would complete the string
 
 
 # ── Rename ────────────────────────────────────────────────────────────────────
@@ -515,8 +510,9 @@ async def test_inlay_hints_returned_for_model_file(
         )
     )
 
-    # Inlay hints may be empty if no hints apply to this file — just ensure no crash
-    assert result is None or isinstance(result, (list, tuple))
+    # user.py has FK columns (Profile.user_id) and relationships — must produce hints
+    assert result is not None
+    assert len(result) > 0, "expected inlay hints for FK columns and relationships in user.py"
 
 
 # ── Diagnostics (via LSP push) ────────────────────────────────────────────────
@@ -526,10 +522,8 @@ async def test_broken_fk_produces_diagnostic(
     client: LanguageClient, tmp_path: pathlib.Path
 ):
     """Changing a FK to reference an unknown table produces SQLA-E301."""
-    user_uri, user_text = (lambda t: (t[0], t[1]))(
-        (workspace_uri(tmp_path, "models", "user.py"),
-         read_fixture("clean_blog", "models", "user.py"))
-    )
+    user_uri = workspace_uri(tmp_path, "models", "user.py")
+    user_text = read_fixture("clean_blog", "models", "user.py")
     await _open_and_wait(client, user_uri, user_text)
 
     # Create a new model file with a bad FK
@@ -601,8 +595,9 @@ async def test_signature_help_inside_relationship_call(
         )
     )
 
-    # May return None if no signature help applies — just ensure no crash
-    assert result is None or isinstance(result, types.SignatureHelp)
+    assert result is not None, "expected signature help inside relationship() call"
+    assert len(result.signatures) > 0
+    assert "relationship(" in result.signatures[0].label
 
 
 # ── Annotated type alias (x6u) ────────────────────────────────────────────────
@@ -658,11 +653,13 @@ async def test_annotated_alias_hover_shows_column_info(
         )
     )
 
-    # The server returns a hover card for known SA columns
     assert result is not None
     content = result.contents
     if isinstance(content, types.MarkupContent):
-        assert content.value, "hover content should not be empty"
+        text = content.value.lower()
+        assert "id" in text and ("pk" in text or "primary" in text), (
+            f"expected PK column info in hover for 'id', got: {content.value!r}"
+        )
     else:
         assert content
 
@@ -686,6 +683,11 @@ async def test_annotated_alias_nullable_column_hover(
     )
 
     assert result is not None
+    content = result.contents
+    if isinstance(content, types.MarkupContent):
+        assert "nullable" in content.value or "description" in content.value, (
+            f"expected nullable/column info in hover for 'description', got: {content.value!r}"
+        )
 
 
 # ── Hover — FK column ─────────────────────────────────────────────────────────
@@ -713,7 +715,9 @@ async def test_hover_on_fk_column_shows_target_info(
     assert result is not None
     content = result.contents
     if isinstance(content, types.MarkupContent):
-        assert content.value
+        assert "users" in content.value.lower(), (
+            f"expected FK target 'users' in hover card for author_id, got: {content.value!r}"
+        )
 
 
 async def test_hover_shows_primary_key_label(
@@ -737,9 +741,70 @@ async def test_hover_shows_primary_key_label(
     content = result.contents
     if isinstance(content, types.MarkupContent):
         text = content.value.lower()
-        assert "primary" in text or "pk" in text or "int" in text, (
-            f"Expected PK hint in hover card, got: {content.value!r}"
+        assert "primary" in text or "pk" in text, (
+            f"Expected PK label in hover card for User.id, got: {content.value!r}"
         )
+
+
+# ── Hover — multi-model same file ────────────────────────────────────────────
+
+
+async def test_hover_two_models_same_file_returns_distinct_cards(
+    client: LanguageClient, tmp_path: pathlib.Path
+):
+    """Hovering on each class name in a two-model file returns the correct card.
+
+    user.py contains Profile (first) and User (second). Hovering on Profile's
+    class name must return Profile's card, not User's; and vice versa.
+    """
+    models = await _open_all_models(client, tmp_path)
+    user_uri, user_text = models["user.py"]
+
+    # Hover on "Profile" class name
+    profile_class_pos = _find(user_text, "class Profile")
+    profile_name_pos = types.Position(
+        line=profile_class_pos.line, character=profile_class_pos.character + 6
+    )
+    result_profile = await client.text_document_hover_async(
+        types.HoverParams(
+            text_document=types.TextDocumentIdentifier(uri=user_uri),
+            position=profile_name_pos,
+        )
+    )
+    assert result_profile is not None, "expected hover card for Profile class name"
+    content_profile = result_profile.contents
+    assert isinstance(content_profile, types.MarkupContent), (
+        f"expected MarkupContent, got {type(content_profile)}"
+    )
+    assert "Profile" in content_profile.value, (
+        f"expected Profile card, got: {content_profile.value!r}"
+    )
+    assert "class User" not in content_profile.value, (
+        f"Profile hover must not show User's card: {content_profile.value!r}"
+    )
+
+    # Hover on "User" class name
+    user_class_pos = _find(user_text, "class User")
+    user_name_pos = types.Position(
+        line=user_class_pos.line, character=user_class_pos.character + 6
+    )
+    result_user = await client.text_document_hover_async(
+        types.HoverParams(
+            text_document=types.TextDocumentIdentifier(uri=user_uri),
+            position=user_name_pos,
+        )
+    )
+    assert result_user is not None, "expected hover card for User class name"
+    content_user = result_user.contents
+    assert isinstance(content_user, types.MarkupContent), (
+        f"expected MarkupContent, got {type(content_user)}"
+    )
+    assert "User" in content_user.value, (
+        f"expected User card, got: {content_user.value!r}"
+    )
+    assert "class Profile" not in content_user.value, (
+        f"User hover must not show Profile's card: {content_user.value!r}"
+    )
 
 
 # ── Completion — op. prefix ───────────────────────────────────────────────────
@@ -749,25 +814,17 @@ async def test_op_completion_after_dot_returns_items(
     client: LanguageClient, tmp_path: pathlib.Path
 ):
     """Completion after 'op.' in a migration context returns op method items."""
+    # revision= is required for the file to be registered in migration_files,
+    # which is the gate for op.* completions (see completion.rs REQ-CMP-03)
     migration_text = (
         "from alembic import op\n"
+        "revision = '00000001'\n"
+        "down_revision = None\n"
         "def upgrade():\n"
         "    op."
     )
     migration_uri = workspace_uri(tmp_path, "migrations", "0001_test.py")
-
-    client.text_document_did_open(
-        types.DidOpenTextDocumentParams(
-            text_document=types.TextDocumentItem(
-                uri=migration_uri,
-                language_id="python",
-                version=1,
-                text=migration_text,
-            )
-        )
-    )
-    # Give the server time to process
-    await asyncio.sleep(0.2)
+    await _open_and_wait(client, migration_uri, migration_text)
 
     cursor_line = migration_text.count("\n")
     cursor_col = len(migration_text.split("\n")[-1])
@@ -779,5 +836,10 @@ async def test_op_completion_after_dot_returns_items(
         )
     )
 
-    # op. completions may or may not be supported — ensure no crash
-    assert result is None or isinstance(result, (list, types.CompletionList))
+    assert result is not None, "expected op.* completions inside a migration file"
+    items = result if isinstance(result, list) else result.items
+    assert items, "expected at least one op.* completion item"
+    labels = [item.label for item in items]
+    assert any(lbl in ("add_column", "create_table", "drop_table") for lbl in labels), (
+        f"expected op.* method completions, got: {labels}"
+    )

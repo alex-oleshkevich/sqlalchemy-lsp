@@ -375,7 +375,7 @@ fn model_card(model: &Model, state: &WorkspaceState) -> String {
     }
 
     let col_names: Vec<&str> = model.columns.keys().map(|s| s.as_str()).collect();
-    let preview_cap = 6usize;
+    let preview_cap = 12usize;
     let preview = if col_names.len() <= preview_cap {
         col_names.join(", ")
     } else {
@@ -1012,5 +1012,63 @@ mod tests {
         };
         assert!(md.contains("ForeignKey"), "{md}");
         assert!(!md.contains("(column"), "{md}");
+    }
+
+    // ── Two models in same file: dispatch returns the correct card ─────────────
+
+    fn model_with_name_at(model_name: &str, table: &str, name_line: u32) -> Model {
+        let col = Column {
+            name: "id".to_string(),
+            key: None,
+            mapped_type: MappedType::Int,
+            args: ColumnArgs::default(),
+            foreign_key: None,
+            doc: None,
+            name_range: rng(name_line + 2, 4, name_line + 2, 6),
+            full_range: rng(name_line + 2, 4, name_line + 2, 40),
+        };
+        Model {
+            name: model_name.to_string(),
+            table_name: Some(table.to_string()),
+            bases: vec![],
+            columns: HashMap::from([("id".to_string(), col)]),
+            relationships: HashMap::new(),
+            table_args: vec![],
+            duplicate_columns: vec![],
+            docstring: None,
+            name_range: rng(name_line, 6, name_line, 6 + model_name.len() as u32),
+            full_range: rng(name_line, 0, name_line + 8, 0),
+        }
+    }
+
+    #[test]
+    fn two_models_same_file_dispatch_returns_correct_card() {
+        let state = WorkspaceState::new();
+        let u = uri("file:///models.py");
+        // Profile at line 0, User at line 10 — non-overlapping ranges
+        let profile = model_with_name_at("Profile", "profiles", 0);
+        let user = model_with_name_at("User", "users", 10);
+        state.update_file(&u, vec![profile, user]);
+
+        // Hover on Profile class name (line 0, col 7)
+        let hover_a = provide_hover(&u, pos(0, 7), &state).unwrap();
+        let md_a = match hover_a.contents {
+            HoverContents::Markup(mc) => mc.value,
+            _ => panic!("expected markup"),
+        };
+        assert!(md_a.contains("Profile"), "expected Profile card, got: {md_a}");
+        assert!(!md_a.contains("class User"), "Profile hover must not mention User class: {md_a}");
+
+        // Hover on User class name (line 10, col 7)
+        let hover_b = provide_hover(&u, pos(10, 7), &state).unwrap();
+        let md_b = match hover_b.contents {
+            HoverContents::Markup(mc) => mc.value,
+            _ => panic!("expected markup"),
+        };
+        assert!(md_b.contains("User"), "expected User card, got: {md_b}");
+        assert!(!md_b.contains("class Profile"), "User hover must not mention Profile class: {md_b}");
+
+        // Between the two class names → None
+        assert!(provide_hover(&u, pos(5, 0), &state).is_none());
     }
 }
