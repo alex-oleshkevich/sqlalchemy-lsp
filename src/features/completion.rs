@@ -1021,6 +1021,9 @@ pub fn provide_completions(
             );
         }
 
+        // REQ-CMP-05 (multi-line): ForeignKey("…") → table.column targets
+        "ForeignKey" if in_string_ts => return complete_fk(&str_pfx, state),
+
         // REQ-CMP-06..10 (multi-line): relationship(…) kwarg completions via AST
         "relationship" => {
             if in_string_ts {
@@ -1032,12 +1035,16 @@ pub fn provide_completions(
                         let target = extract_mapped_target(source, pos.line)?;
                         return complete_back_populates(&target, &str_pfx, state);
                     }
+                    None => return complete_rel_target_models(&str_pfx, state),
                     _ => return None,
                 }
             } else {
                 return complete_relationship_kwargs(&word_pfx);
             }
         }
+
+        // REQ-CMP-11 (multi-line): mapped_column(…) kwargs
+        "mapped_column" if !in_string_ts => return complete_mapped_column_kwargs(&word_pfx),
 
         // REQ-CMP-13: Model constructor → column/relationship keywords
         model_name if state.model_index.contains_key(model_name) => {
@@ -1300,6 +1307,61 @@ mod tests {
         };
         let items = provide_completions(&u, src, pos, &state).unwrap_or_default();
         assert!(items.iter().any(|i| i.label == "samodel"), "{items:?}");
+    }
+
+    // ── Multi-line call regressions ───────────────────────────────────────────
+
+    #[test]
+    fn multiline_fk_string_completions() {
+        // ForeignKey(\n    "us|"\n) — ForeignKey( is on a different line
+        let state = WorkspaceState::new();
+        let model_u = uri("file:///user.py");
+        make_model_with_cols(&state, &model_u, "User", "users", &["id"]);
+        let u = uri("file:///post.py");
+        let src = "from sqlalchemy import ForeignKey\nauthor_id = mapped_column(\n    ForeignKey(\n        \"us\"\n    )\n)";
+        parse_and_store(src, &u, &state);
+        // cursor inside "us" on line 3
+        let pos = Position { line: 3, character: 10 };
+        let items = provide_completions(&u, src, pos, &state).unwrap_or_default();
+        assert!(
+            items.iter().any(|i| i.label.starts_with("users.")),
+            "multi-line ForeignKey should offer FK targets; got {items:?}"
+        );
+    }
+
+    #[test]
+    fn multiline_mapped_column_kwargs() {
+        // mapped_column( on line 1, cursor before existing kwarg on line 2.
+        // Needs complete source so tree-sitter can identify the enclosing call.
+        let state = WorkspaceState::new();
+        let u = uri("file:///post.py");
+        let src = "from sqlalchemy.orm import mapped_column\nid = mapped_column(\n    nullable=False\n)";
+        parse_and_store(src, &u, &state);
+        // Cursor at (2, 4) — start of `nullable` but word_pfx="" since only spaces to the left
+        let pos = Position { line: 2, character: 4 };
+        let items = provide_completions(&u, src, pos, &state).unwrap_or_default();
+        assert!(
+            items.iter().any(|i| i.label == "primary_key"),
+            "multi-line mapped_column should offer kwargs; got {items:?}"
+        );
+    }
+
+    #[test]
+    fn multiline_relationship_positional_string() {
+        // relationship(\n    "Us|"\n) — positional model-name string on continuation line
+        let state = WorkspaceState::new();
+        let model_u = uri("file:///user.py");
+        make_model_with_cols(&state, &model_u, "User", "users", &["id"]);
+        let u = uri("file:///post.py");
+        let src = "from sqlalchemy.orm import relationship\nauthor = relationship(\n    \"Us\"\n)";
+        parse_and_store(src, &u, &state);
+        // cursor inside "Us" on line 2 (after "Us")
+        let pos = Position { line: 2, character: 7 };
+        let items = provide_completions(&u, src, pos, &state).unwrap_or_default();
+        assert!(
+            items.iter().any(|i| i.label == "User"),
+            "multi-line relationship positional string should offer model names; got {items:?}"
+        );
     }
 
     // ── REQ-CMP-15: negative — plain Python → None ────────────────────────────
