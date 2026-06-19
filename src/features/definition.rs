@@ -487,6 +487,68 @@ mod tests {
         assert!(resolve_definition(&u, "", pos(0, 5), &state).is_none());
     }
 
+    fn parse_tree(source: &str) -> tree_sitter::Tree {
+        let mut parser = tree_sitter::Parser::new();
+        parser
+            .set_language(&tree_sitter_python::LANGUAGE.into())
+            .unwrap();
+        parser.parse(source, None).unwrap()
+    }
+
+    // ── REQ-DEF-08: bare model name on class definition → self ───────────────
+
+    #[test]
+    fn req_def_08_class_name_in_definition_resolves() {
+        // `class Address(Base):` — cursor on "Address" navigates to the class
+        let source = "from sqlalchemy.orm import DeclarativeBase\n\nclass Base(DeclarativeBase):\n    pass\n\nclass Address(Base):\n    __tablename__ = \"addresses\"\n";
+        // line 5 col 6..13 = "Address"
+        let addr_name_range = rng(5, 6, 5, 13);
+        let state = WorkspaceState::new();
+        let u = uri("file:///address.py");
+        let mut model = simple_model("Address", "addresses", &[]);
+        model.name_range = addr_name_range;
+        state.update_file(&u, vec![model]);
+        let tree = parse_tree(source);
+        state.parse_trees.insert(u.clone(), tree);
+        state.file_sources.insert(u.clone(), source.to_string());
+
+        let loc = resolve_definition(&u, "", pos(5, 9), &state).unwrap();
+        assert_eq!(loc.uri, u);
+        assert_eq!(loc.range.start.line, 5);
+        assert_eq!(loc.range.start.character, 6);
+    }
+
+    // ── REQ-DEF-08: model name in Mapped[Model] annotation → model class ─────
+
+    #[test]
+    fn req_def_08_mapped_type_annotation_resolves() {
+        // `addr: Mapped[Address]` — cursor on "Address" navigates to Address class
+        let source = "from sqlalchemy.orm import Mapped, mapped_column\n\nclass User(Base):\n    __tablename__ = \"users\"\n    addr: Mapped[Address]\n";
+        // line 4: "    addr: Mapped[Address]"
+        //          0123456789012345678901234
+        //  "Address" starts at col 17
+        let addr_name_range = rng(0, 6, 0, 13);
+        let state = WorkspaceState::new();
+        let addr_u = uri("file:///address.py");
+        let mut addr_model = simple_model("Address", "addresses", &[]);
+        addr_model.name_range = addr_name_range;
+        state.update_file(&addr_u, vec![addr_model]);
+
+        let user_u = uri("file:///user.py");
+        let user_model = simple_model("User", "users", &[]);
+        state.update_file(&user_u, vec![user_model]);
+
+        let tree = parse_tree(source);
+        state.parse_trees.insert(user_u.clone(), tree);
+        state.file_sources.insert(user_u.clone(), source.to_string());
+
+        // cursor at col 20 is on "Address" in "Mapped[Address]"
+        let loc = resolve_definition(&user_u, "", pos(4, 20), &state).unwrap();
+        assert_eq!(loc.uri, addr_u);
+        assert_eq!(loc.range.start.line, 0);
+        assert_eq!(loc.range.start.character, 6);
+    }
+
     // ── REQ-DEF-11: foreign_keys string model ref → model class ──────────────
 
     #[test]
