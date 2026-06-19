@@ -402,6 +402,18 @@ enum KwargPos {
 }
 
 /// Find the enclosing `call` node walking up from `leaf`.
+/// Walk up the AST from `node` to find the enclosing `keyword_argument` and return its key.
+fn kwarg_key_from_ast(mut node: tree_sitter::Node<'_>, source: &[u8]) -> Option<String> {
+    loop {
+        if node.kind() == "keyword_argument" {
+            return node
+                .child_by_field_name("name")
+                .map(|n| node_text(n, source).to_string());
+        }
+        node = node.parent()?;
+    }
+}
+
 fn find_enclosing_call(leaf: tree_sitter::Node) -> Option<tree_sitter::Node> {
     let mut node = leaf;
     loop {
@@ -1009,6 +1021,24 @@ pub fn provide_completions(
             );
         }
 
+        // REQ-CMP-06..10 (multi-line): relationship(…) kwarg completions via AST
+        "relationship" => {
+            if in_string_ts {
+                let kwarg_key = kwarg_key_from_ast(leaf, source_bytes);
+                match kwarg_key.as_deref() {
+                    Some("lazy") => return complete_lazy_values(&str_pfx),
+                    Some("cascade") => return complete_cascade_values(&str_pfx),
+                    Some("back_populates") => {
+                        let target = extract_mapped_target(source, pos.line)?;
+                        return complete_back_populates(&target, &str_pfx, state);
+                    }
+                    _ => return None,
+                }
+            } else {
+                return complete_relationship_kwargs(&word_pfx);
+            }
+        }
+
         // REQ-CMP-13: Model constructor → column/relationship keywords
         model_name if state.model_index.contains_key(model_name) => {
             let kwarg_pos_ts = args_node.and_then(|a| kwarg_position(a, pos, source_bytes));
@@ -1216,6 +1246,26 @@ mod tests {
         assert!(
             items.iter().any(|i| i.label == "delete-orphan"),
             "{items:?}"
+        );
+    }
+
+    #[test]
+    fn req_cmp_08_cascade_after_existing_token() {
+        // Regression: cascade="all, $CURSOR" on a multi-line relationship call.
+        // innermost_call_name returns None (no `(` on the continuation line),
+        // so the tree-sitter fallback must handle it.
+        let state = WorkspaceState::new();
+        let u = uri("file:///post.py");
+        let src = "from sqlalchemy.orm import relationship\nauthor = relationship(\n    back_populates=\"bp\",\n    cascade=\"all, \"\n)";
+        parse_and_store(src, &u, &state);
+        // Line 3 is `    cascade="all, "` — cursor before the closing quote
+        let line3 = src.lines().nth(3).unwrap();
+        let char_pos = line3.find("all, ").unwrap() as u32 + "all, ".len() as u32;
+        let pos = Position { line: 3, character: char_pos };
+        let items = provide_completions(&u, src, pos, &state).unwrap_or_default();
+        assert!(
+            items.iter().any(|i| i.label == "delete-orphan"),
+            "multi-line cascade after existing token should offer delete-orphan; got {items:?}"
         );
     }
 
