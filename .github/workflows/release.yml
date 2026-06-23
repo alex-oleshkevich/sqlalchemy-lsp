@@ -205,5 +205,7 @@ jobs:
           pattern: wheels-*
           merge-multiple: true
           path: dist/
+      - name: List dist
+        run: find dist -type f | sort
       - uses: astral-sh/setup-uv@v4
-      - run: uv publish dist/
+      - run: uv publish dist/*.whl
