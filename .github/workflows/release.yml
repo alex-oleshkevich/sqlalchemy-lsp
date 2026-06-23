@@ -192,7 +192,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: wheels-${{ matrix.target }}
-          path: dist/
+          path: target/wheels/
 
   publish-pypi:
     needs: [release, build-wheels]
