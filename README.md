@@ -44,7 +44,17 @@ Best-practice lints (`SQLA-W1xx`–`SQLA-H4xx`) default on and cover modernizati
 
 ## Installation
 
-Download a binary from the [releases page](https://github.com/alex-oleshkevich/sqlalchemy-lsp/releases).
+```bash
+uv tool install sqlalchemy-lsp
+```
+
+Or with pip:
+
+```bash
+pip install sqlalchemy-lsp
+```
+
+Or download a pre-built binary from the [releases page](https://github.com/alex-oleshkevich/sqlalchemy-lsp/releases).
 
 ## Configuration
 
