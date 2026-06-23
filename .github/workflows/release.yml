@@ -48,16 +48,23 @@ jobs:
         run: cargo install cross --locked && cross build --release --target "$BUILD_TARGET"
       - name: Build
         if: ${{ matrix.cross != true }}
-        env:
-          BUILD_TARGET: ${{ matrix.target }}
-        run: cargo build --release --target "$BUILD_TARGET"
+        shell: bash
+        run: cargo build --release --target ${{ matrix.target }}
       - name: Strip and rename (Linux)
-        if: ${{ matrix.os == 'ubuntu-latest' }}
+        if: ${{ matrix.os == 'ubuntu-latest' && matrix.cross != true }}
         env:
           BUILD_TARGET: ${{ matrix.target }}
           ARTIFACT_NAME: ${{ matrix.name }}
         run: |
           strip "target/${BUILD_TARGET}/release/sqlalchemy-lsp"
+          cp "target/${BUILD_TARGET}/release/sqlalchemy-lsp" "sqlalchemy-lsp-${ARTIFACT_NAME}"
+          sha256sum "sqlalchemy-lsp-${ARTIFACT_NAME}" > "sqlalchemy-lsp-${ARTIFACT_NAME}.sha256"
+      - name: Rename (Linux cross)
+        if: ${{ matrix.os == 'ubuntu-latest' && matrix.cross == true }}
+        env:
+          BUILD_TARGET: ${{ matrix.target }}
+          ARTIFACT_NAME: ${{ matrix.name }}
+        run: |
           cp "target/${BUILD_TARGET}/release/sqlalchemy-lsp" "sqlalchemy-lsp-${ARTIFACT_NAME}"
           sha256sum "sqlalchemy-lsp-${ARTIFACT_NAME}" > "sqlalchemy-lsp-${ARTIFACT_NAME}.sha256"
       - name: Strip and rename (macOS)
@@ -181,7 +188,7 @@ jobs:
           target: ${{ matrix.target }}
           args: --release --strip
           sccache: true
-          manylinux: auto
+          manylinux: 2_28
       - uses: actions/upload-artifact@v4
         with:
           name: wheels-${{ matrix.target }}
