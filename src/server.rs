@@ -392,10 +392,9 @@ impl LanguageServer for Backend {
             if let Some(root) = root_opt {
                 if let Some(root_path) = root.to_file_path() {
                     let root_owned = root_path.as_ref().to_path_buf();
-                    if let Ok(cfg) = tokio::task::spawn_blocking(move || {
-                        crate::config::load_config(&root_owned)
-                    })
-                    .await
+                    if let Ok(cfg) =
+                        tokio::task::spawn_blocking(move || crate::config::load_config(&root_owned))
+                            .await
                     {
                         *self.state.config.write().await = cfg;
                         tracing::info!("workspace config reloaded");

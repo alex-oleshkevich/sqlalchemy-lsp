@@ -521,7 +521,9 @@ pub fn load_config(workspace_root: &Path) -> Config {
                 if let Some(section) = doc.get("tool").and_then(|t| t.get("sqlalchemy-lsp")) {
                     match section.clone().try_into::<Config>() {
                         Ok(layer) => config = config.merge(layer),
-                        Err(e) => tracing::warn!("pyproject.toml [tool.sqlalchemy-lsp] parse error: {e}"),
+                        Err(e) => {
+                            tracing::warn!("pyproject.toml [tool.sqlalchemy-lsp] parse error: {e}")
+                        }
                     }
                 }
             }
@@ -581,10 +583,11 @@ pub fn apply_noqa_to_diagnostics(diags: Vec<Diagnostic>, source: &str) -> Vec<Di
     let lines: Vec<&str> = source.lines().collect();
 
     // File-level suppression: any `# noqa: file` on any line clears the whole file.
-    if lines
-        .iter()
-        .any(|l| NoqaMarker::parse(l).map(|m| matches!(m, NoqaMarker::File)).unwrap_or(false))
-    {
+    if lines.iter().any(|l| {
+        NoqaMarker::parse(l)
+            .map(|m| matches!(m, NoqaMarker::File))
+            .unwrap_or(false)
+    }) {
         return vec![];
     }
 
