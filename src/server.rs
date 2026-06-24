@@ -123,7 +123,14 @@ impl Backend {
 
 impl LanguageServer for Backend {
     async fn initialize(&self, params: InitializeParams) -> Result<InitializeResult> {
-        tracing::info!("initialize: client={}", params.client_info.as_ref().map(|c| c.name.as_str()).unwrap_or("unknown"));
+        tracing::info!(
+            "initialize: client={}",
+            params
+                .client_info
+                .as_ref()
+                .map(|c| c.name.as_str())
+                .unwrap_or("unknown")
+        );
         // Negotiate position encoding: prefer UTF-8 when the client advertises it.
         let use_utf8 = params
             .capabilities
@@ -320,7 +327,11 @@ impl LanguageServer for Backend {
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
         let uri = params.text_document.uri;
-        tracing::debug!(uri = uri.as_str(), changes = params.content_changes.len(), "did_change");
+        tracing::debug!(
+            uri = uri.as_str(),
+            changes = params.content_changes.len(),
+            "did_change"
+        );
         let encoding = self.encoding();
         // Apply incremental edits atomically: serialize per-URI so burst changes land in order.
         let new_source = {
@@ -460,7 +471,13 @@ impl LanguageServer for Backend {
         let uri = params.text_document_position_params.text_document.uri;
         let pos = params.text_document_position_params.position;
         let result = hover::provide_hover(&uri, pos, &self.state);
-        tracing::debug!(uri = uri.as_str(), line = pos.line, col = pos.character, found = result.is_some(), "hover");
+        tracing::debug!(
+            uri = uri.as_str(),
+            line = pos.line,
+            col = pos.character,
+            found = result.is_some(),
+            "hover"
+        );
         Ok(result)
     }
 
@@ -483,7 +500,11 @@ impl LanguageServer for Backend {
             uri = uri.as_str(),
             line = pos.line,
             col = pos.character,
-            target = loc.as_ref().map(|l| l.uri.to_string()).as_deref().unwrap_or("none"),
+            target = loc
+                .as_ref()
+                .map(|l| l.uri.to_string())
+                .as_deref()
+                .unwrap_or("none"),
             "goto_definition"
         );
         Ok(loc.map(GotoDefinitionResponse::Scalar))
@@ -499,7 +520,13 @@ impl LanguageServer for Backend {
         let pos = params.text_document_position.position;
         let include_decl = params.context.include_declaration;
         let locs = references::provide_references(&uri, pos, include_decl, &self.state);
-        tracing::debug!(uri = uri.as_str(), line = pos.line, col = pos.character, n = locs.len(), "references");
+        tracing::debug!(
+            uri = uri.as_str(),
+            line = pos.line,
+            col = pos.character,
+            n = locs.len(),
+            "references"
+        );
         Ok(if locs.is_empty() { None } else { Some(locs) })
     }
 
@@ -600,7 +627,10 @@ async fn scan_workspace(
         return;
     };
 
-    tracing::info!(total_py = py_files.len(), "workspace scan: processing files");
+    tracing::info!(
+        total_py = py_files.len(),
+        "workspace scan: processing files"
+    );
     // Read and filter files, then run Pass 1 on each matching one.
     for path in &py_files {
         let Ok(source) = std::fs::read_to_string(path) else {

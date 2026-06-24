@@ -540,7 +540,9 @@ mod tests {
 
         let tree = parse_tree(source);
         state.parse_trees.insert(user_u.clone(), tree);
-        state.file_sources.insert(user_u.clone(), source.to_string());
+        state
+            .file_sources
+            .insert(user_u.clone(), source.to_string());
 
         // cursor at col 20 is on "Address" in "Mapped[Address]"
         let loc = resolve_definition(&user_u, "", pos(4, 20), &state).unwrap();
@@ -556,7 +558,11 @@ mod tests {
         let state = WorkspaceState::new();
 
         let cc_u = uri("file:///credit_check.py");
-        let cc = simple_model("CreditCheck", "credit_checks", &[("applicant_id", rng(4, 4, 4, 16))]);
+        let cc = simple_model(
+            "CreditCheck",
+            "credit_checks",
+            &[("applicant_id", rng(4, 4, 4, 16))],
+        );
         state.update_file(&cc_u, vec![cc]);
 
         let app_u = uri("file:///applicant.py");

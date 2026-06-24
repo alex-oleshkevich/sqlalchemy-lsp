@@ -1268,7 +1268,10 @@ mod tests {
         // Line 3 is `    cascade="all, "` — cursor before the closing quote
         let line3 = src.lines().nth(3).unwrap();
         let char_pos = line3.find("all, ").unwrap() as u32 + "all, ".len() as u32;
-        let pos = Position { line: 3, character: char_pos };
+        let pos = Position {
+            line: 3,
+            character: char_pos,
+        };
         let items = provide_completions(&u, src, pos, &state).unwrap_or_default();
         assert!(
             items.iter().any(|i| i.label == "delete-orphan"),
@@ -1321,7 +1324,10 @@ mod tests {
         let src = "from sqlalchemy import ForeignKey\nauthor_id = mapped_column(\n    ForeignKey(\n        \"us\"\n    )\n)";
         parse_and_store(src, &u, &state);
         // cursor inside "us" on line 3
-        let pos = Position { line: 3, character: 10 };
+        let pos = Position {
+            line: 3,
+            character: 10,
+        };
         let items = provide_completions(&u, src, pos, &state).unwrap_or_default();
         assert!(
             items.iter().any(|i| i.label.starts_with("users.")),
@@ -1335,10 +1341,14 @@ mod tests {
         // Needs complete source so tree-sitter can identify the enclosing call.
         let state = WorkspaceState::new();
         let u = uri("file:///post.py");
-        let src = "from sqlalchemy.orm import mapped_column\nid = mapped_column(\n    nullable=False\n)";
+        let src =
+            "from sqlalchemy.orm import mapped_column\nid = mapped_column(\n    nullable=False\n)";
         parse_and_store(src, &u, &state);
         // Cursor at (2, 4) — start of `nullable` but word_pfx="" since only spaces to the left
-        let pos = Position { line: 2, character: 4 };
+        let pos = Position {
+            line: 2,
+            character: 4,
+        };
         let items = provide_completions(&u, src, pos, &state).unwrap_or_default();
         assert!(
             items.iter().any(|i| i.label == "primary_key"),
@@ -1356,7 +1366,10 @@ mod tests {
         let src = "from sqlalchemy.orm import relationship\nauthor = relationship(\n    \"Us\"\n)";
         parse_and_store(src, &u, &state);
         // cursor inside "Us" on line 2 (after "Us")
-        let pos = Position { line: 2, character: 7 };
+        let pos = Position {
+            line: 2,
+            character: 7,
+        };
         let items = provide_completions(&u, src, pos, &state).unwrap_or_default();
         assert!(
             items.iter().any(|i| i.label == "User"),

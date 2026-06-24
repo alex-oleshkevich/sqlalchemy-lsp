@@ -286,8 +286,16 @@ fn render_full<W: Write>(
         } else {
             f.message.clone()
         };
-        let arrow = if use_color { "-->".blue().to_string() } else { "-->".to_string() };
-        let pipe = if use_color { "|".blue().to_string() } else { "|".to_string() };
+        let arrow = if use_color {
+            "-->".blue().to_string()
+        } else {
+            "-->".to_string()
+        };
+        let pipe = if use_color {
+            "|".blue().to_string()
+        } else {
+            "|".to_string()
+        };
         let line_num_colored = if use_color {
             line_str.as_str().blue().to_string()
         } else {

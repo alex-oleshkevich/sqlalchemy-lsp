@@ -18,7 +18,12 @@ use crate::{
 };
 
 type AliasMap = std::collections::HashMap<String, ColumnArgs>;
-type Pass1Result = Option<(tree_sitter::Tree, Vec<Model>, Option<MigrationFile>, AliasMap)>;
+type Pass1Result = Option<(
+    tree_sitter::Tree,
+    Vec<Model>,
+    Option<MigrationFile>,
+    AliasMap,
+)>;
 
 // ── CLI headless scan ─────────────────────────────────────────────────────────
 
@@ -161,43 +166,41 @@ pub async fn run_pass1(uri: Uri, source: String, state: &Arc<WorkspaceState>, cl
         .collect();
 
     let result = task::spawn_blocking(move || -> Pass1Result {
-            let mut parser = tree_sitter::Parser::new();
-            parser
-                .set_language(&tree_sitter_python::LANGUAGE.into())
-                .ok()?;
-            let tree = parser.parse(src.as_str(), None)?;
+        let mut parser = tree_sitter::Parser::new();
+        parser
+            .set_language(&tree_sitter_python::LANGUAGE.into())
+            .ok()?;
+        let tree = parser.parse(src.as_str(), None)?;
 
-            let local_aliases: AliasMap = if has_sqlalchemy_indicators(&src) {
-                extract_annotated_aliases(&src, &tree)
-            } else {
-                AliasMap::new()
-            };
+        let local_aliases: AliasMap = if has_sqlalchemy_indicators(&src) {
+            extract_annotated_aliases(&src, &tree)
+        } else {
+            AliasMap::new()
+        };
 
-            // Merge local aliases into the snapshot so this file's own definitions
-            // are available during extraction (relevant when both defined and used in same file).
-            let mut merged = alias_snapshot;
-            for (k, v) in &local_aliases {
-                merged.entry(k.clone()).or_insert_with(|| v.clone());
-            }
+        // Merge local aliases into the snapshot so this file's own definitions
+        // are available during extraction (relevant when both defined and used in same file).
+        let mut merged = alias_snapshot;
+        for (k, v) in &local_aliases {
+            merged.entry(k.clone()).or_insert_with(|| v.clone());
+        }
 
-            let global_map: dashmap::DashMap<String, ColumnArgs> =
-                merged.into_iter().collect();
+        let global_map: dashmap::DashMap<String, ColumnArgs> = merged.into_iter().collect();
 
-            let models = if has_sqlalchemy_indicators(&src) {
-                extract_models(&src, &tree, &global_map)
-            } else {
-                vec![]
-            };
+        let models = if has_sqlalchemy_indicators(&src) {
+            extract_models(&src, &tree, &global_map)
+        } else {
+            vec![]
+        };
 
-            let migration = if has_alembic_indicators(&src) {
-                extract_migration(&src, &tree)
-            } else {
-                None
-            };
+        let migration = if has_alembic_indicators(&src) {
+            extract_migration(&src, &tree)
+        } else {
+            None
+        };
 
-            Some((tree, models, migration, local_aliases))
-        },
-    )
+        Some((tree, models, migration, local_aliases))
+    })
     .await;
 
     match result {

@@ -363,7 +363,11 @@ pub fn extract_annotated_aliases(source: &str, tree: &Tree) -> HashMap<String, C
     sym.annotated_column_args
 }
 
-pub fn extract_models(source: &str, tree: &Tree, global_aliases: &DashMap<String, ColumnArgs>) -> Vec<Model> {
+pub fn extract_models(
+    source: &str,
+    tree: &Tree,
+    global_aliases: &DashMap<String, ColumnArgs>,
+) -> Vec<Model> {
     let bytes = source.as_bytes();
     let root = tree.root_node();
 
@@ -374,7 +378,9 @@ pub fn extract_models(source: &str, tree: &Tree, global_aliases: &DashMap<String
     // This handles `from common import UUIDPk` where UUIDPk is defined in another file.
     for name in sym.bindings.keys().cloned().collect::<Vec<_>>() {
         if let Some(args) = global_aliases.get(&name) {
-            sym.annotated_column_args.entry(name).or_insert_with(|| args.clone());
+            sym.annotated_column_args
+                .entry(name)
+                .or_insert_with(|| args.clone());
         }
     }
 
@@ -1550,7 +1556,10 @@ class Address(Base):
         let models = extract(src, &tree);
         assert_eq!(models.len(), 1);
         let col = &models[0].columns["id"];
-        assert!(col.args.primary_key, "id should be detected as primary key via type alias");
+        assert!(
+            col.args.primary_key,
+            "id should be detected as primary key via type alias"
+        );
     }
 
     #[test]
@@ -1572,7 +1581,10 @@ class Item(Base):
         let tree = parse(src);
         let models = extract(src, &tree);
         let col = &models[0].columns["note"];
-        assert!(col.args.nullable, "nullable=True from alias should be respected");
+        assert!(
+            col.args.nullable,
+            "nullable=True from alias should be respected"
+        );
     }
 
     #[test]
@@ -1591,7 +1603,10 @@ class Post(Base):
         let tree = parse(src);
         let models = extract(src, &tree);
         let col = &models[0].columns["id"];
-        assert!(col.args.primary_key, "primary_key from inline Annotated annotation");
+        assert!(
+            col.args.primary_key,
+            "primary_key from inline Annotated annotation"
+        );
     }
 
     #[test]

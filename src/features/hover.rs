@@ -487,8 +487,7 @@ pub fn provide_hover(uri: &Uri, pos: Position, state: &WorkspaceState) -> Option
 
             // 1. Test relationship sub-ranges (back_populates, cascade) — most specific
             for rel in model.relationships.values() {
-                if let (Some(bp), Some(bp_range)) =
-                    (&rel.back_populates, &rel.back_populates_range)
+                if let (Some(bp), Some(bp_range)) = (&rel.back_populates, &rel.back_populates_range)
                 {
                     if pos_in(pos, *bp_range) {
                         let md = back_populates_card(&rel.target_model, bp, state);
@@ -580,11 +579,10 @@ pub fn provide_hover(uri: &Uri, pos: Position, state: &WorkspaceState) -> Option
     }
 
     // ── Fallback: identifier at cursor → model_index lookup ────────────────────
-    // Only fires in SA model files. Non-model files (routers, services, tests)
-    // return None so the companion Python LSP can provide type hover (P5).
-    if state.file_models.get(uri).is_none_or(|m| m.is_empty()) {
-        return None;
-    }
+    // Fires in any file (model files, routers, services, tests) that has a
+    // source indexed. If the identifier under the cursor is a known SA model,
+    // return its model card. Otherwise return None so the companion Python LSP
+    // can provide type hover (P5).
     let source = state.file_sources.get(uri)?;
     let (ident, ident_range) = word_at(&source, pos)?;
     let model_uri = {
@@ -1118,8 +1116,14 @@ mod tests {
             HoverContents::Markup(mc) => mc.value,
             _ => panic!("expected markup"),
         };
-        assert!(md_a.contains("Profile"), "expected Profile card, got: {md_a}");
-        assert!(!md_a.contains("class User"), "Profile hover must not mention User class: {md_a}");
+        assert!(
+            md_a.contains("Profile"),
+            "expected Profile card, got: {md_a}"
+        );
+        assert!(
+            !md_a.contains("class User"),
+            "Profile hover must not mention User class: {md_a}"
+        );
 
         // Hover on User class name (line 10, col 7)
         let hover_b = provide_hover(&u, pos(10, 7), &state).unwrap();
@@ -1128,17 +1132,21 @@ mod tests {
             _ => panic!("expected markup"),
         };
         assert!(md_b.contains("User"), "expected User card, got: {md_b}");
-        assert!(!md_b.contains("class Profile"), "User hover must not mention Profile class: {md_b}");
+        assert!(
+            !md_b.contains("class Profile"),
+            "User hover must not mention Profile class: {md_b}"
+        );
 
         // Between the two class names → None
         assert!(provide_hover(&u, pos(5, 0), &state).is_none());
     }
 
-    // ── Identifier fallback: restricted to SA model files (P5) ──────────────
+    // ── Identifier fallback: works in non-model files too ───────────────────
 
     #[test]
-    fn hover_model_name_in_router_file_returns_none() {
-        // Router files have no SA models; we yield to the Python LSP (P5).
+    fn hover_model_name_in_router_file_returns_card() {
+        // Router files have no SA models of their own, but hovering on a known
+        // model name should still return the model card via the global index.
         let state = WorkspaceState::new();
 
         let model_uri = uri("file:///models.py");
@@ -1151,8 +1159,17 @@ mod tests {
             .file_sources
             .insert(router_uri.clone(), router_src.to_string());
 
-        // No SA models in this file → None (Python LSP handles it)
-        assert!(provide_hover(&router_uri, pos(2, 19), &state).is_none());
+        // "User" at line 2, col 18 ("def get_user() -> User:")
+        let hover = provide_hover(&router_uri, pos(2, 18), &state).unwrap();
+        let md = match hover.contents {
+            HoverContents::Markup(mc) => mc.value,
+            _ => panic!("expected markup"),
+        };
+        assert!(md.contains("User"), "expected User model card, got: {md}");
+        assert!(
+            md.contains("users"),
+            "expected table name in card, got: {md}"
+        );
     }
 
     #[test]
@@ -1167,8 +1184,11 @@ mod tests {
         let post_uri = uri("file:///post.py");
         let post = simple_model("Post", "posts", "id");
         state.update_file(&post_uri, vec![post]);
-        let post_src = "from sqlalchemy.orm import Mapped\nclass Post(Base):\n    author: Mapped[User]\n";
-        state.file_sources.insert(post_uri.clone(), post_src.to_string());
+        let post_src =
+            "from sqlalchemy.orm import Mapped\nclass Post(Base):\n    author: Mapped[User]\n";
+        state
+            .file_sources
+            .insert(post_uri.clone(), post_src.to_string());
 
         // "User" at col 19 in line 2 ("    author: Mapped[User]")
         let hover = provide_hover(&post_uri, pos(2, 19), &state).unwrap();
@@ -1177,7 +1197,10 @@ mod tests {
             _ => panic!("expected markup"),
         };
         assert!(md.contains("User"), "expected User model card, got: {md}");
-        assert!(md.contains("users"), "expected table name in card, got: {md}");
+        assert!(
+            md.contains("users"),
+            "expected table name in card, got: {md}"
+        );
     }
 
     #[test]
