@@ -104,7 +104,7 @@ sqlalchemy-lsp stats
 
 Install from the Zed extensions panel (`Cmd+Shift+X`) — search for **sqlalchemy-lsp** and click Install. It activates automatically for Python files.
 
-To control server order alongside pyright, add to `~/.config/zed/settings.json`:
+To control server order alongside other language servers, add to `~/.config/zed/settings.json`:
 
 ```json
 {
