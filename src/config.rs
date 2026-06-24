@@ -1,12 +1,7 @@
-use std::{
-    collections::{HashMap, HashSet},
-    path::Path,
-};
+use std::{collections::HashMap, path::Path};
 
 use serde::Deserialize;
 use tower_lsp_server::ls_types::{Diagnostic, NumberOrString};
-
-use crate::model::types::{DiagnosticTags, FixKind, Severity};
 
 // ── Raw config types (as parsed from TOML) ───────────────────────────────────
 
@@ -34,13 +29,6 @@ impl Default for DiagnosticsConfig {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
-pub struct OverrideEntry {
-    pub includes: Vec<String>,
-    #[serde(default)]
-    pub diagnostics: DiagnosticsConfig,
-}
-
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct Config {
     #[serde(default)]
@@ -49,8 +37,6 @@ pub struct Config {
     pub target_dialect: Option<String>,
     #[serde(default)]
     pub diagnostics: DiagnosticsConfig,
-    #[serde(default)]
-    pub overrides: Vec<OverrideEntry>,
     pub log_level: Option<String>,
     pub log_file: Option<String>,
 }
@@ -84,69 +70,11 @@ impl Config {
         for (k, v) in overlay.diagnostics.severity {
             self.diagnostics.severity.insert(k, v);
         }
-        // overrides: append in declaration order
-        self.overrides.extend(overlay.overrides);
         self
-    }
-
-    /// Resolve the active diagnostic config for a given file path, applying
-    /// any matching glob overrides on top of the base `diagnostics` block.
-    pub fn resolve_for_file(
-        &self,
-        file_path: &str,
-        registry: &CodeRegistry,
-    ) -> (ResolvedDiagnosticsConfig, Vec<String>) {
-        let mut combined = self.diagnostics.clone();
-        for entry in &self.overrides {
-            if glob_matches_any(&entry.includes, file_path) {
-                if entry.diagnostics.select != default_select() {
-                    combined.select = entry.diagnostics.select.clone();
-                }
-                combined.ignore.extend(entry.diagnostics.ignore.clone());
-                for (k, v) in &entry.diagnostics.severity {
-                    combined.severity.insert(k.clone(), v.clone());
-                }
-            }
-        }
-        ResolvedDiagnosticsConfig::resolve(&combined, registry)
     }
 }
 
 // ── Code parsing ─────────────────────────────────────────────────────────────
-
-/// A parsed `SQLA-<SEV><CLASS><NN>` code.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ParsedCode {
-    pub severity_char: char, // 'E' | 'W' | 'I' | 'H'
-    pub class: u8,           // 1..=9
-    pub rule: u8,            // 01..=99
-}
-
-impl ParsedCode {
-    /// Returns `None` if `s` is not a well-formed `SQLA-<SEV><CLASS><NN>` code.
-    pub fn parse(s: &str) -> Option<Self> {
-        let rest = s.strip_prefix("SQLA-")?;
-        let mut chars = rest.chars();
-        let sev = chars.next()?;
-        if !matches!(sev, 'E' | 'W' | 'I' | 'H') {
-            return None;
-        }
-        let digits: String = chars.collect();
-        if digits.len() != 3 {
-            return None;
-        }
-        let class = digits[0..1].parse::<u8>().ok()?;
-        let rule = digits[1..].parse::<u8>().ok()?;
-        if class == 0 {
-            return None;
-        }
-        Some(ParsedCode {
-            severity_char: sev,
-            class,
-            rule,
-        })
-    }
-}
 
 /// Returns `true` if `code` belongs to the group identified by `token`
 /// (e.g. `"SQLA-W303"` matches `"SQLA-3xx"`).
@@ -172,263 +100,6 @@ pub fn code_matches_class_token(code: &str, token: &str) -> bool {
         return false;
     };
     tok_class == code_class
-}
-
-/// Classifies a `select`/`ignore`/`severity` entry by specificity.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum DiagTarget {
-    Preset(Preset),
-    ClassToken(String),
-    Code(String),
-    Unknown(String),
-}
-
-impl DiagTarget {
-    pub fn parse(s: &str) -> Self {
-        match s {
-            "recommended" => DiagTarget::Preset(Preset::Recommended),
-            "all" => DiagTarget::Preset(Preset::All),
-            "none" => DiagTarget::Preset(Preset::None),
-            s => {
-                let Some(rest) = s.strip_prefix("SQLA-") else {
-                    return DiagTarget::Unknown(s.to_string());
-                };
-                if rest.len() == 3 && rest.ends_with("xx") {
-                    DiagTarget::ClassToken(s.to_string())
-                } else if ParsedCode::parse(s).is_some() {
-                    DiagTarget::Code(s.to_string())
-                } else {
-                    DiagTarget::Unknown(s.to_string())
-                }
-            }
-        }
-    }
-}
-
-// ── Preset ───────────────────────────────────────────────────────────────────
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Preset {
-    Recommended,
-    All,
-    None,
-}
-
-// ── Code registry (REQ-CFG-14) ───────────────────────────────────────────────
-
-/// One entry in the central code registry — the single source of truth for
-/// all metadata about a diagnostic code.
-#[derive(Clone, Debug)]
-pub struct CodeEntry {
-    pub code: String,
-    pub rule_name: String,
-    pub default_severity: Severity,
-    pub class: u8,
-    pub enabled_by_default: bool,
-    pub fix_kind: FixKind,
-    pub tags: DiagnosticTags,
-}
-
-/// The authoritative registry every feature and config resolver reads.
-/// Feature beads (F01/F02/F13) will register their codes at startup.
-pub struct CodeRegistry {
-    entries: Vec<CodeEntry>,
-}
-
-impl CodeRegistry {
-    pub fn new() -> Self {
-        Self {
-            entries: Vec::new(),
-        }
-    }
-
-    pub fn register(&mut self, entry: CodeEntry) {
-        self.entries.push(entry);
-    }
-
-    pub fn get(&self, code: &str) -> Option<&CodeEntry> {
-        self.entries.iter().find(|e| e.code == code)
-    }
-
-    pub fn by_class(&self, class: u8) -> impl Iterator<Item = &CodeEntry> {
-        self.entries.iter().filter(move |e| e.class == class)
-    }
-
-    pub fn all_codes(&self) -> impl Iterator<Item = &CodeEntry> {
-        self.entries.iter()
-    }
-
-    pub fn codes_for_preset(&self, preset: Preset) -> Vec<&CodeEntry> {
-        match preset {
-            Preset::All => self.entries.iter().collect(),
-            Preset::Recommended => self
-                .entries
-                .iter()
-                .filter(|e| e.enabled_by_default)
-                .collect(),
-            Preset::None => vec![],
-        }
-    }
-}
-
-impl Default for CodeRegistry {
-    fn default() -> Self {
-        let mut reg = Self::new();
-        // Off-by-default preview rules (REQ-CFG-07): shaky heuristics that false-positive.
-        reg.register(CodeEntry {
-            code: "SQLA-H416".to_string(),
-            rule_name: "viewonly-write".to_string(),
-            default_severity: Severity::Hint,
-            class: 4,
-            enabled_by_default: false,
-            fix_kind: FixKind::None,
-            tags: DiagnosticTags::default(),
-        });
-        reg.register(CodeEntry {
-            code: "SQLA-H602".to_string(),
-            rule_name: "association-proxy-misconfigured".to_string(),
-            default_severity: Severity::Hint,
-            class: 6,
-            enabled_by_default: false,
-            fix_kind: FixKind::None,
-            tags: DiagnosticTags::default(),
-        });
-        // Off-by-default style rule (REQ-CFG-07): opt-in, fires on nearly every column.
-        reg.register(CodeEntry {
-            code: "SQLA-I207".to_string(),
-            rule_name: "missing-column-comment".to_string(),
-            default_severity: Severity::Info,
-            class: 2,
-            enabled_by_default: false,
-            fix_kind: FixKind::None,
-            tags: DiagnosticTags::default(),
-        });
-        // Tooling meta-finding — always on.
-        reg.register(CodeEntry {
-            code: "SQLA-W901".to_string(),
-            rule_name: "unused-noqa".to_string(),
-            default_severity: Severity::Warning,
-            class: 9,
-            enabled_by_default: true,
-            fix_kind: FixKind::Safe,
-            tags: DiagnosticTags {
-                fixable: true,
-                ..Default::default()
-            },
-        });
-        reg
-    }
-}
-
-// ── Resolution (REQ-CFG-08) ──────────────────────────────────────────────────
-
-/// The resolved active rule set and severity overrides for one file.
-pub struct ResolvedDiagnosticsConfig {
-    pub active_codes: HashSet<String>,
-    pub severity_overrides: HashMap<String, Severity>,
-}
-
-impl ResolvedDiagnosticsConfig {
-    /// Resolve select → ignore → severity (REQ-CFG-08).
-    /// Returns the resolved config and a list of config warnings (unknown codes/tokens).
-    pub fn resolve(diag: &DiagnosticsConfig, registry: &CodeRegistry) -> (Self, Vec<String>) {
-        let mut warnings = Vec::new();
-        let mut active: HashSet<String> = HashSet::new();
-
-        // Step 1: select
-        for s in &diag.select {
-            match DiagTarget::parse(s) {
-                DiagTarget::Preset(p) => {
-                    for e in registry.codes_for_preset(p) {
-                        active.insert(e.code.clone());
-                    }
-                }
-                DiagTarget::ClassToken(ref tok) => {
-                    for e in registry.all_codes() {
-                        if code_matches_class_token(&e.code, tok) {
-                            active.insert(e.code.clone());
-                        }
-                    }
-                }
-                DiagTarget::Code(ref code) => {
-                    if registry.get(code).is_some() {
-                        active.insert(code.clone());
-                    } else {
-                        warnings.push(format!("unknown diagnostic code in select: {code}"));
-                    }
-                }
-                DiagTarget::Unknown(ref s) => {
-                    warnings.push(format!("unknown select target: {s}"));
-                }
-            }
-        }
-
-        // Step 2: ignore
-        for s in &diag.ignore {
-            match DiagTarget::parse(s) {
-                DiagTarget::Preset(p) => {
-                    for e in registry.codes_for_preset(p) {
-                        active.remove(&e.code);
-                    }
-                }
-                DiagTarget::ClassToken(ref tok) => {
-                    active.retain(|code| !code_matches_class_token(code, tok));
-                }
-                DiagTarget::Code(ref code) => {
-                    active.remove(code);
-                }
-                DiagTarget::Unknown(ref s) => {
-                    warnings.push(format!("unknown ignore target: {s}"));
-                }
-            }
-        }
-
-        // Step 3: severity — class tokens first, then specific codes (specificity order)
-        let mut severity_overrides: HashMap<String, Severity> = HashMap::new();
-        let class_entries: Vec<_> = diag
-            .severity
-            .iter()
-            .filter(|(k, _)| matches!(DiagTarget::parse(k), DiagTarget::ClassToken(_)))
-            .collect();
-        let code_entries: Vec<_> = diag
-            .severity
-            .iter()
-            .filter(|(k, _)| matches!(DiagTarget::parse(k), DiagTarget::Code(_)))
-            .collect();
-        for (tok, sev_str) in class_entries {
-            if let Some(sev) = parse_severity_str(sev_str) {
-                for e in registry.all_codes() {
-                    if code_matches_class_token(&e.code, tok) {
-                        severity_overrides.insert(e.code.clone(), sev);
-                    }
-                }
-            }
-        }
-        for (code, sev_str) in code_entries {
-            if let Some(sev) = parse_severity_str(sev_str) {
-                severity_overrides.insert(code.clone(), sev);
-            }
-        }
-
-        (
-            Self {
-                active_codes: active,
-                severity_overrides,
-            },
-            warnings,
-        )
-    }
-
-    pub fn is_active(&self, code: &str) -> bool {
-        self.active_codes.contains(code)
-    }
-
-    pub fn effective_severity(&self, code: &str, registry: &CodeRegistry) -> Option<Severity> {
-        if let Some(&sev) = self.severity_overrides.get(code) {
-            return Some(sev);
-        }
-        registry.get(code).map(|e| e.default_severity)
-    }
 }
 
 // ── Noqa suppression (REQ-CFG-09) ────────────────────────────────────────────
@@ -477,32 +148,6 @@ impl NoqaMarker {
             NoqaMarker::Codes(codes) => codes.iter().any(|c| c == code),
         }
     }
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-fn parse_severity_str(s: &str) -> Option<Severity> {
-    match s.to_lowercase().as_str() {
-        "error" => Some(Severity::Error),
-        "warning" | "warn" => Some(Severity::Warning),
-        "info" | "information" => Some(Severity::Info),
-        "hint" => Some(Severity::Hint),
-        _ => None,
-    }
-}
-
-fn glob_matches_any(patterns: &[String], path: &str) -> bool {
-    use globset::{Glob, GlobSetBuilder};
-    let mut builder = GlobSetBuilder::new();
-    for pat in patterns {
-        if let Ok(g) = Glob::new(pat) {
-            builder.add(g);
-        }
-    }
-    builder
-        .build()
-        .map(|set| set.is_match(path))
-        .unwrap_or(false)
 }
 
 // ── Config loading ────────────────────────────────────────────────────────────
@@ -616,38 +261,6 @@ pub fn apply_noqa_to_diagnostics(diags: Vec<Diagnostic>, source: &str) -> Vec<Di
 mod tests {
     use super::*;
 
-    fn registry() -> CodeRegistry {
-        CodeRegistry::default()
-    }
-
-    // ── REQ-CFG-05: code parsing ──────────────────────────────────────────────
-
-    #[test]
-    fn parsed_code_valid() {
-        let c = ParsedCode::parse("SQLA-W303").unwrap();
-        assert_eq!(c.severity_char, 'W');
-        assert_eq!(c.class, 3);
-        assert_eq!(c.rule, 3);
-    }
-
-    #[test]
-    fn parsed_code_all_severity_chars() {
-        assert!(ParsedCode::parse("SQLA-E101").is_some());
-        assert!(ParsedCode::parse("SQLA-W303").is_some());
-        assert!(ParsedCode::parse("SQLA-I207").is_some());
-        assert!(ParsedCode::parse("SQLA-H416").is_some());
-    }
-
-    #[test]
-    fn parsed_code_rejects_malformed() {
-        assert!(ParsedCode::parse("SQLA-").is_none());
-        assert!(ParsedCode::parse("SQLA-W30").is_none(), "too short");
-        assert!(ParsedCode::parse("SQLA-W3003").is_none(), "too long");
-        assert!(ParsedCode::parse("SQLA-X303").is_none(), "bad sev char");
-        assert!(ParsedCode::parse("SQLA-W003").is_none(), "class 0");
-        assert!(ParsedCode::parse("E303").is_none(), "missing prefix");
-    }
-
     // ── code_matches_class_token ──────────────────────────────────────────────
 
     #[test]
@@ -661,126 +274,6 @@ mod tests {
     fn class_token_rejects_different_class() {
         assert!(!code_matches_class_token("SQLA-W303", "SQLA-4xx"));
         assert!(!code_matches_class_token("SQLA-H416", "SQLA-3xx"));
-    }
-
-    // ── REQ-CFG-07: default-on policy ────────────────────────────────────────
-
-    #[test]
-    fn off_by_default_set_is_exactly_three() {
-        let reg = registry();
-        let off: Vec<_> = reg.all_codes().filter(|e| !e.enabled_by_default).collect();
-        let off_codes: Vec<&str> = off.iter().map(|e| e.code.as_str()).collect();
-        assert!(
-            off_codes.contains(&"SQLA-H416"),
-            "H416 must be off by default"
-        );
-        assert!(
-            off_codes.contains(&"SQLA-H602"),
-            "H602 must be off by default"
-        );
-        assert!(
-            off_codes.contains(&"SQLA-I207"),
-            "I207 must be off by default"
-        );
-        assert_eq!(off_codes.len(), 3, "exactly three off-by-default rules");
-    }
-
-    // ── REQ-CFG-08: resolution order ─────────────────────────────────────────
-
-    #[test]
-    fn recommended_preset_excludes_off_by_default() {
-        let reg = registry();
-        let diag = DiagnosticsConfig::default(); // select = ["recommended"]
-        let (resolved, warnings) = ResolvedDiagnosticsConfig::resolve(&diag, &reg);
-        assert!(warnings.is_empty());
-        assert!(resolved.is_active("SQLA-W901"), "W901 must be active");
-        assert!(!resolved.is_active("SQLA-H416"), "H416 off by default");
-        assert!(!resolved.is_active("SQLA-H602"), "H602 off by default");
-        assert!(!resolved.is_active("SQLA-I207"), "I207 off by default");
-    }
-
-    #[test]
-    fn all_preset_includes_off_by_default() {
-        let reg = registry();
-        let diag = DiagnosticsConfig {
-            select: vec!["all".to_string()],
-            ..Default::default()
-        };
-        let (resolved, _) = ResolvedDiagnosticsConfig::resolve(&diag, &reg);
-        assert!(resolved.is_active("SQLA-H416"));
-        assert!(resolved.is_active("SQLA-H602"));
-        assert!(resolved.is_active("SQLA-I207"));
-    }
-
-    #[test]
-    fn none_preset_starts_empty() {
-        let reg = registry();
-        let diag = DiagnosticsConfig {
-            select: vec!["none".to_string()],
-            ..Default::default()
-        };
-        let (resolved, _) = ResolvedDiagnosticsConfig::resolve(&diag, &reg);
-        assert!(resolved.active_codes.is_empty());
-    }
-
-    #[test]
-    fn ignore_removes_after_select() {
-        let reg = registry();
-        let diag = DiagnosticsConfig {
-            select: vec!["all".to_string()],
-            ignore: vec!["SQLA-W901".to_string()],
-            ..Default::default()
-        };
-        let (resolved, _) = ResolvedDiagnosticsConfig::resolve(&diag, &reg);
-        assert!(!resolved.is_active("SQLA-W901"));
-        assert!(resolved.is_active("SQLA-H416"));
-    }
-
-    #[test]
-    fn unknown_code_in_select_emits_warning() {
-        let reg = registry();
-        let diag = DiagnosticsConfig {
-            select: vec!["SQLA-E999".to_string()],
-            ..Default::default()
-        };
-        let (_, warnings) = ResolvedDiagnosticsConfig::resolve(&diag, &reg);
-        assert!(!warnings.is_empty());
-    }
-
-    // ── REQ-CFG-12: class tokens + specificity ────────────────────────────────
-
-    #[test]
-    fn class_token_in_select_enables_group() {
-        let reg = registry();
-        let diag = DiagnosticsConfig {
-            select: vec!["none".to_string(), "SQLA-4xx".to_string()],
-            ..Default::default()
-        };
-        let (resolved, _) = ResolvedDiagnosticsConfig::resolve(&diag, &reg);
-        assert!(resolved.is_active("SQLA-H416"), "H416 is class 4");
-        assert!(!resolved.is_active("SQLA-W901"), "W901 is class 9, not 4");
-    }
-
-    #[test]
-    fn specific_code_overrides_class_in_severity() {
-        let reg = registry();
-        let diag = DiagnosticsConfig {
-            select: vec!["all".to_string()],
-            severity: {
-                let mut m = HashMap::new();
-                m.insert("SQLA-9xx".to_string(), "error".to_string());
-                m.insert("SQLA-W901".to_string(), "hint".to_string());
-                m
-            },
-            ..Default::default()
-        };
-        let (resolved, _) = ResolvedDiagnosticsConfig::resolve(&diag, &reg);
-        // Class token makes W901 error, then specific code overrides to hint
-        assert_eq!(
-            resolved.effective_severity("SQLA-W901", &reg),
-            Some(Severity::Hint),
-            "specific code beats class token"
-        );
     }
 
     // ── REQ-CFG-09: noqa parsing ──────────────────────────────────────────────
