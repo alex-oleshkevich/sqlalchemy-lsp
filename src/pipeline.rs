@@ -8,6 +8,7 @@ use tower_lsp_server::{Client, ls_types::Uri};
 
 use crate::{
     alembic::{MigrationFile, extractor::extract_migration},
+    config::{apply_noqa_to_diagnostics, filter_diagnostics},
     features::{alembic_diag, f01, f02},
     model::types::{ColumnArgs, Model},
     parsing::{
@@ -248,7 +249,13 @@ pub async fn run_pass2(
     client: &Client,
     supports_inlay_hint_refresh: bool,
 ) {
-    // Run F01 diagnostics for every indexed SA model file, store results, then publish.
+    // Snapshot the diagnostic filter config once so the whole pass is consistent.
+    let diag_config = {
+        let guard = state.config.read().await;
+        guard.diagnostics.clone()
+    };
+
+    // Run F01/F02 diagnostics for every indexed SA model file, filter, store, then publish.
     let model_uris: Vec<Uri> = state.file_models.iter().map(|e| e.key().clone()).collect();
     tracing::info!(
         sa_files = model_uris.len(),
@@ -256,18 +263,24 @@ pub async fn run_pass2(
         "pass2 relink"
     );
     for uri in &model_uris {
-        let diags = if let Some(models) = state.file_models.get(uri) {
+        let raw = if let Some(models) = state.file_models.get(uri) {
             let mut d = f01::check_file(&models, state);
             d.extend(f02::check_file(&models, state));
             d
         } else {
             vec![]
         };
+        let diags = filter_diagnostics(raw, &diag_config);
+        let diags = if let Some(source) = state.file_sources.get(uri) {
+            apply_noqa_to_diagnostics(diags, &source)
+        } else {
+            diags
+        };
         state.diagnostics.insert(uri.clone(), diags.clone());
         client.publish_diagnostics(uri.clone(), diags, None).await;
     }
 
-    // Run Alembic diagnostics for every migration file, then publish.
+    // Run Alembic diagnostics for every migration file, filter, merge with SA diags, publish.
     let heads = alembic_diag::compute_head_set(state);
     let migration_uris: Vec<Uri> = state
         .migration_files
@@ -275,18 +288,24 @@ pub async fn run_pass2(
         .map(|e| e.key().clone())
         .collect();
     for uri in &migration_uris {
-        let alembic_diags = if let Some(mf) = state.migration_files.get(uri) {
+        let alembic_raw = if let Some(mf) = state.migration_files.get(uri) {
             alembic_diag::check_migration(&mf, state, &heads)
         } else {
             vec![]
         };
-        // Merge with any SA model diagnostics already computed for this URI.
+        let alembic_diags = filter_diagnostics(alembic_raw, &diag_config);
+        // Merge with any SA model diagnostics already stored for this URI.
         let mut diags = state
             .diagnostics
             .get(uri)
             .map(|d| d.clone())
             .unwrap_or_default();
         diags.extend(alembic_diags);
+        let diags = if let Some(source) = state.file_sources.get(uri) {
+            apply_noqa_to_diagnostics(diags, &source)
+        } else {
+            diags
+        };
         state.diagnostics.insert(uri.clone(), diags.clone());
         // Only publish if not already published by the SA model loop above.
         if !state.file_models.contains_key(uri) {

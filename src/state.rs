@@ -1,8 +1,10 @@
 use dashmap::DashMap;
+use tokio::sync::RwLock;
 use tower_lsp_server::ls_types::{Diagnostic, Uri};
 use tree_sitter::Tree;
 
 use crate::alembic::MigrationFile;
+use crate::config::Config;
 use crate::model::types::{ColumnArgs, Model, ModelLocation};
 
 pub type FileModels = Vec<Model>;
@@ -24,6 +26,9 @@ pub struct WorkspaceState {
     /// Populated from every file's `X = Annotated[T, mapped_column(...)]` definitions.
     /// Lets model files resolve imported type aliases (e.g. `from common import UUIDPk`).
     pub annotated_alias_index: DashMap<String, ColumnArgs>,
+    /// Active workspace config, loaded from pyproject.toml / sqlalchemy-lsp.toml at startup
+    /// and reloaded whenever those files change.
+    pub config: RwLock<Config>,
 }
 
 impl WorkspaceState {
@@ -39,6 +44,7 @@ impl WorkspaceState {
             diagnostics: DashMap::new(),
             open_uris: DashMap::new(),
             annotated_alias_index: DashMap::new(),
+            config: RwLock::new(Config::default()),
         }
     }
 

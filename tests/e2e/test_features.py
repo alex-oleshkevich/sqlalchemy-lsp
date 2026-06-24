@@ -919,3 +919,75 @@ async def test_op_completion_after_dot_returns_items(
     assert any(lbl in ("add_column", "create_table", "drop_table") for lbl in labels), (
         f"expected op.* method completions, got: {labels}"
     )
+
+
+# ── noqa suppression (LSP path) ──────────────────────────────────────────────
+
+
+_NOQA_MODEL_TEXT = """\
+from __future__ import annotations
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+class Base(DeclarativeBase):
+    pass
+
+class SuppressedModel(Base):  # noqa: SQLA-W101
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+class AlsoSuppressed(Base):  # noqa
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+class UnsuppressedModel(Base):
+    id: Mapped[int] = mapped_column(primary_key=True)
+"""
+
+
+async def test_noqa_code_suppresses_lsp_diagnostic(
+    client: LanguageClient, tmp_path: pathlib.Path
+):
+    """# noqa: SQLA-W101 on the class line suppresses that diagnostic via the LSP server."""
+    uri = workspace_uri(tmp_path, "noqa_model.py")
+    await _open_and_wait(client, uri, _NOQA_MODEL_TEXT)
+
+    # SQLA-W101 is a Pass-2 diagnostic — poll until it appears or 10 s elapse.
+    for _ in range(20):
+        diags = client.diagnostics.get(uri, [])
+        codes = [d.code for d in diags]
+        if "SQLA-W101" in codes:
+            break
+        await asyncio.sleep(0.5)
+
+    diags = client.diagnostics.get(uri, [])
+    codes = [d.code for d in diags]
+    w101 = [d for d in diags if d.code == "SQLA-W101"]
+
+    # Exactly one W101: UnsuppressedModel. SuppressedModel and AlsoSuppressed are silent.
+    assert len(w101) == 1, f"expected 1 SQLA-W101 (UnsuppressedModel only), got {codes}"
+
+    # The surviving diagnostic must point at UnsuppressedModel (line 12, 0-based).
+    assert w101[0].range.start.line == 12, (
+        f"SQLA-W101 should be on line 12 (UnsuppressedModel), "
+        f"got line {w101[0].range.start.line}"
+    )
+
+
+async def test_noqa_bare_suppresses_all_lsp_diagnostics_on_line(
+    client: LanguageClient, tmp_path: pathlib.Path
+):
+    """Bare # noqa suppresses every SQLA-* finding on that line."""
+    uri = workspace_uri(tmp_path, "noqa_bare.py")
+    await _open_and_wait(client, uri, _NOQA_MODEL_TEXT)
+
+    for _ in range(20):
+        diags = client.diagnostics.get(uri, [])
+        if any(d.code == "SQLA-W101" for d in diags):
+            break
+        await asyncio.sleep(0.5)
+
+    diags = client.diagnostics.get(uri, [])
+    also_suppressed_line = 9  # "class AlsoSuppressed(Base):  # noqa" (0-based)
+    on_bare_line = [d for d in diags if d.range.start.line == also_suppressed_line]
+    assert on_bare_line == [], (
+        f"bare # noqa should suppress all diagnostics on line {also_suppressed_line}, "
+        f"got: {on_bare_line}"
+    )

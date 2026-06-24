@@ -1,9 +1,10 @@
-// dead_code expected until E01 wires the config loading and feature handlers land.
-#![allow(dead_code)]
-
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    path::Path,
+};
 
 use serde::Deserialize;
+use tower_lsp_server::ls_types::{Diagnostic, NumberOrString};
 
 use crate::model::types::{DiagnosticTags, FixKind, Severity};
 
@@ -502,6 +503,108 @@ fn glob_matches_any(patterns: &[String], path: &str) -> bool {
         .build()
         .map(|set| set.is_match(path))
         .unwrap_or(false)
+}
+
+// ── Config loading ────────────────────────────────────────────────────────────
+
+/// Load and merge config from `pyproject.toml` (lower precedence) and
+/// `sqlalchemy-lsp.toml` (higher precedence) found at `workspace_root`.
+/// Missing files are silently skipped; parse errors are logged and skipped.
+pub fn load_config(workspace_root: &Path) -> Config {
+    let mut config = Config::default();
+
+    // Layer 1: pyproject.toml → [tool.sqlalchemy-lsp]
+    let pyproject = workspace_root.join("pyproject.toml");
+    if let Ok(text) = std::fs::read_to_string(&pyproject) {
+        match text.parse::<toml::Value>() {
+            Ok(doc) => {
+                if let Some(section) = doc.get("tool").and_then(|t| t.get("sqlalchemy-lsp")) {
+                    match section.clone().try_into::<Config>() {
+                        Ok(layer) => config = config.merge(layer),
+                        Err(e) => tracing::warn!("pyproject.toml [tool.sqlalchemy-lsp] parse error: {e}"),
+                    }
+                }
+            }
+            Err(e) => tracing::warn!("pyproject.toml TOML parse error: {e}"),
+        }
+    }
+
+    // Layer 2: sqlalchemy-lsp.toml (wins over pyproject.toml per key)
+    let lsp_toml = workspace_root.join("sqlalchemy-lsp.toml");
+    if let Ok(text) = std::fs::read_to_string(&lsp_toml) {
+        match toml::from_str::<Config>(&text) {
+            Ok(layer) => config = config.merge(layer),
+            Err(e) => tracing::warn!("sqlalchemy-lsp.toml parse error: {e}"),
+        }
+    }
+
+    config
+}
+
+// ── Diagnostic filtering ──────────────────────────────────────────────────────
+
+/// Remove diagnostics whose code matches any entry in `diag_config.ignore`.
+/// Supports exact code strings (`"SQLA-W303"`) and class tokens (`"SQLA-3xx"`).
+pub fn filter_diagnostics(
+    diags: Vec<Diagnostic>,
+    diag_config: &DiagnosticsConfig,
+) -> Vec<Diagnostic> {
+    if diag_config.ignore.is_empty() {
+        return diags;
+    }
+    diags
+        .into_iter()
+        .filter(|d| {
+            let code_str = match d.code.as_ref() {
+                Some(NumberOrString::String(s)) => s.as_str(),
+                _ => return true,
+            };
+            !diag_config
+                .ignore
+                .iter()
+                .any(|ig| ig == code_str || code_matches_class_token(code_str, ig))
+        })
+        .collect()
+}
+
+// ── # noqa suppression (LSP path) ────────────────────────────────────────────
+
+/// Remove diagnostics suppressed by `# noqa` comments in `source`.
+///
+/// - `# noqa: SQLA-W303` on the diagnostic's start line suppresses that code.
+/// - `# noqa` (bare) on the start line suppresses all `SQLA-*` codes on that line.
+/// - `# noqa: file` on any line in the file suppresses all `SQLA-*` findings.
+pub fn apply_noqa_to_diagnostics(diags: Vec<Diagnostic>, source: &str) -> Vec<Diagnostic> {
+    if !source.contains("# noqa") {
+        return diags;
+    }
+    let lines: Vec<&str> = source.lines().collect();
+
+    // File-level suppression: any `# noqa: file` on any line clears the whole file.
+    if lines
+        .iter()
+        .any(|l| NoqaMarker::parse(l).map(|m| matches!(m, NoqaMarker::File)).unwrap_or(false))
+    {
+        return vec![];
+    }
+
+    diags
+        .into_iter()
+        .filter(|d| {
+            let line_idx = d.range.start.line as usize;
+            let Some(line) = lines.get(line_idx) else {
+                return true;
+            };
+            let Some(marker) = NoqaMarker::parse(line) else {
+                return true;
+            };
+            let code = match d.code.as_ref() {
+                Some(NumberOrString::String(s)) => s.as_str(),
+                _ => return true,
+            };
+            !marker.suppresses(code)
+        })
+        .collect()
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

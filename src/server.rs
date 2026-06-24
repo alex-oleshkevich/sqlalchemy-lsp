@@ -375,7 +375,36 @@ impl LanguageServer for Backend {
 
     async fn did_change_watched_files(&self, params: DidChangeWatchedFilesParams) {
         tracing::debug!(events = params.changes.len(), "did_change_watched_files");
+
+        let mut config_changed = false;
+        let mut python_events = vec![];
         for event in params.changes {
+            if is_workspace_config_file(&event.uri) {
+                config_changed = true;
+            } else {
+                python_events.push(event);
+            }
+        }
+
+        // Reload config before Pass 2 so the new filter takes effect immediately.
+        if config_changed {
+            let root_opt = self.root_uri.lock().unwrap().clone();
+            if let Some(root) = root_opt {
+                if let Some(root_path) = root.to_file_path() {
+                    let root_owned = root_path.as_ref().to_path_buf();
+                    if let Ok(cfg) = tokio::task::spawn_blocking(move || {
+                        crate::config::load_config(&root_owned)
+                    })
+                    .await
+                    {
+                        *self.state.config.write().await = cfg;
+                        tracing::info!("workspace config reloaded");
+                    }
+                }
+            }
+        }
+
+        for event in python_events {
             let uri = event.uri;
             // Open-buffer overlay: ignore watcher events for files open in the editor.
             if self.state.open_uris.contains_key(&uri) {
@@ -619,6 +648,18 @@ async fn scan_workspace(
         return;
     };
 
+    // Load workspace config before scanning so Pass 2 sees the right filter from the start.
+    let root_owned: PathBuf = root_path.as_ref().to_path_buf();
+    if let Ok(cfg) = tokio::task::spawn_blocking({
+        let r = root_owned.clone();
+        move || crate::config::load_config(&r)
+    })
+    .await
+    {
+        *state.config.write().await = cfg;
+        tracing::info!("workspace config loaded");
+    }
+
     // Collect .py files matching indicators in a blocking thread.
     let root_owned: PathBuf = root_path.as_ref().to_path_buf();
     let Ok(py_files) =
@@ -656,4 +697,18 @@ async fn scan_workspace(
     generation.fetch_add(1, Ordering::SeqCst);
     // Single Pass 2 after the full scan.
     run_pass2(&state, &client, supports_inlay_hint_refresh).await;
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/// Returns `true` when `uri` points to a file that carries workspace config
+/// (pyproject.toml or sqlalchemy-lsp.toml). Changes to these files trigger a
+/// config reload + Pass 2 relink instead of a Python-source Pass 1.
+fn is_workspace_config_file(uri: &Uri) -> bool {
+    uri.path()
+        .as_str()
+        .rsplit('/')
+        .next()
+        .map(|name| name == "pyproject.toml" || name == "sqlalchemy-lsp.toml")
+        .unwrap_or(false)
 }
