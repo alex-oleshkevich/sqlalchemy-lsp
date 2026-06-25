@@ -95,7 +95,8 @@ pub fn build_workspace_index(root: &Path) -> Arc<WorkspaceState> {
     // Cross-file diagnostics (no client.publish_diagnostics needed for CLI)
     let model_uris: Vec<Uri> = state.file_models.iter().map(|e| e.key().clone()).collect();
     for uri in &model_uris {
-        if let Some(models) = state.file_models.get(uri) {
+        // Clone out before check_file re-locks file_models (same shard) — see run_pass2.
+        if let Some(models) = state.file_models.get(uri).map(|m| m.clone()) {
             let mut d = f01::check_file(&models, &state);
             d.extend(f02::check_file(&models, &state));
             state.diagnostics.insert(uri.clone(), d);
@@ -263,7 +264,11 @@ pub async fn run_pass2(
         "pass2 relink"
     );
     for uri in &model_uris {
-        let raw = if let Some(models) = state.file_models.get(uri) {
+        // Clone out of the DashMap and drop the guard before f01/f02::check_file,
+        // which re-lock file_models via get()/iter() on the same shard — holding
+        // this Ref across them deadlocks under a concurrent writer (write-preferring
+        // RwLock). Mirrors the safe clone pattern in hover.rs.
+        let raw = if let Some(models) = state.file_models.get(uri).map(|m| m.clone()) {
             let mut d = f01::check_file(&models, state);
             d.extend(f02::check_file(&models, state));
             d

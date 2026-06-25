@@ -112,7 +112,10 @@ pub fn provide_code_actions(
 
     let mut actions: Vec<CodeActionOrCommand> = Vec::new();
 
-    let file_models = match state.file_models.get(uri) {
+    // Clone out of the DashMap: the loop below calls resolve_back_populates_counterpart,
+    // which re-locks file_models via get() on the same shard. Holding this Ref across it
+    // deadlocks under a concurrent writer (write-preferring RwLock).
+    let file_models = match state.file_models.get(uri).map(|m| m.clone()) {
         Some(m) => m,
         None => return actions,
     };
