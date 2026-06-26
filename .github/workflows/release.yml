@@ -138,8 +138,8 @@ jobs:
           printf '%s\n' "$AUR_SSH_KEY" > ~/.ssh/aur
           chmod 600 ~/.ssh/aur
           ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
-          git config user.email "alex.oleshkevich@gmail.com"
-          git config user.name "Alex Oleshkevich"
+          git config --global user.email "alex.oleshkevich@gmail.com"
+          git config --global user.name "Alex Oleshkevich"
           cd pkg/aur
           git init
           git add PKGBUILD .SRCINFO
