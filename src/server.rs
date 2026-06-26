@@ -269,6 +269,10 @@ impl LanguageServer for Backend {
                         kind: None,
                     },
                     FileSystemWatcher {
+                        glob_pattern: GlobPattern::String("**/sqlalchemy-lsp.toml".to_string()),
+                        kind: None,
+                    },
+                    FileSystemWatcher {
                         glob_pattern: GlobPattern::String("**/alembic.ini".to_string()),
                         kind: None,
                     },

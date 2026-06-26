@@ -2,6 +2,11 @@
 /target/
 **/*.rs.bk
 
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
 # Editor extensions build output
 editors/zed/target/
 editors/vscode/node_modules/
