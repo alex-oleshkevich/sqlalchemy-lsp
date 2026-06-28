@@ -122,29 +122,46 @@ jobs:
           GH_TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
           VERSION="${GH_TAG#v}"
-          X86_URL="https://github.com/${GH_REPO}/releases/download/v${VERSION}/sqlalchemy-lsp-linux-x86_64"
-          AARCH64_URL="https://github.com/${GH_REPO}/releases/download/v${VERSION}/sqlalchemy-lsp-linux-aarch64"
-          X86_SUM=$(curl -sL "$X86_URL" | sha256sum | cut -d' ' -f1)
-          AARCH64_SUM=$(curl -sL "$AARCH64_URL" | sha256sum | cut -d' ' -f1)
-          sed -i "s/^pkgver=.*/pkgver=${VERSION}/" pkg/aur/PKGBUILD
-          sed -i "s/^sha256sums_x86_64=.*/sha256sums_x86_64=('${X86_SUM}')/" pkg/aur/PKGBUILD
-          sed -i "s/^sha256sums_aarch64=.*/sha256sums_aarch64=('${AARCH64_SUM}')/" pkg/aur/PKGBUILD
-          sed -i "s/pkgver = .*/pkgver = ${VERSION}/" pkg/aur/.SRCINFO
-          sed -i "s|source_x86_64 = .*|source_x86_64 = sqlalchemy-lsp-linux-x86_64::https://github.com/${GH_REPO}/releases/download/v${VERSION}/sqlalchemy-lsp-linux-x86_64|" pkg/aur/.SRCINFO
-          sed -i "s|source_aarch64 = .*|source_aarch64 = sqlalchemy-lsp-linux-aarch64::https://github.com/${GH_REPO}/releases/download/v${VERSION}/sqlalchemy-lsp-linux-aarch64|" pkg/aur/.SRCINFO
-          sed -i "s/sha256sums_x86_64 = .*/sha256sums_x86_64 = ${X86_SUM}/" pkg/aur/.SRCINFO
-          sed -i "s/sha256sums_aarch64 = .*/sha256sums_aarch64 = ${AARCH64_SUM}/" pkg/aur/.SRCINFO
+          X86_SUM=$(curl -sL \
+            "https://github.com/${GH_REPO}/releases/download/v${VERSION}/sqlalchemy-lsp-linux-x86_64" \
+            | sha256sum | cut -d' ' -f1)
+          AARCH64_SUM=$(curl -sL \
+            "https://github.com/${GH_REPO}/releases/download/v${VERSION}/sqlalchemy-lsp-linux-aarch64" \
+            | sha256sum | cut -d' ' -f1)
+
           mkdir -p ~/.ssh
-          printf '%s\n' "$AUR_SSH_KEY" > ~/.ssh/aur
-          chmod 600 ~/.ssh/aur
-          ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
+          printf '%s\n' "$AUR_SSH_KEY" > ~/.ssh/aur_rsa
+          chmod 600 ~/.ssh/aur_rsa
+          ssh-keyscan -H aur.archlinux.org >> ~/.ssh/known_hosts
           git config --global user.email "alex.oleshkevich@gmail.com"
           git config --global user.name "Alex Oleshkevich"
-          cd pkg/aur
-          git init
+
+          if git clone -c core.sshCommand="ssh -i ~/.ssh/aur_rsa" \
+              ssh://aur@aur.archlinux.org/sqlalchemy-lsp.git /tmp/aur; then
+            echo "Updating existing AUR package"
+          else
+            echo "Initialising new AUR package"
+            mkdir /tmp/aur
+            git -C /tmp/aur init
+            git -C /tmp/aur remote add origin ssh://aur@aur.archlinux.org/sqlalchemy-lsp.git
+          fi
+
+          sed \
+            -e "s/^pkgver=.*/pkgver=${VERSION}/" \
+            -e "s/^pkgrel=.*/pkgrel=1/" \
+            -e "s/^sha256sums_x86_64=.*/sha256sums_x86_64=('${X86_SUM}')/" \
+            -e "s/^sha256sums_aarch64=.*/sha256sums_aarch64=('${AARCH64_SUM}')/" \
+            pkg/aur/PKGBUILD > /tmp/aur/PKGBUILD
+
+          docker run --rm -v /tmp/aur:/pkg archlinux:base-devel \
+            bash -c "useradd -m builder && chmod 777 /pkg && su builder -c 'cd /pkg && makepkg --printsrcinfo'" \
+            > /tmp/aur/.SRCINFO
+
+          cd /tmp/aur
           git add PKGBUILD .SRCINFO
-          git commit -m "Update to ${VERSION}"
-          GIT_SSH_COMMAND="ssh -i ~/.ssh/aur" git push ssh://aur@aur.archlinux.org/sqlalchemy-lsp.git HEAD:master
+          git diff --cached --quiet && echo "No changes" && exit 0
+          git commit -m "bump to ${VERSION}"
+          GIT_SSH_COMMAND="ssh -i ~/.ssh/aur_rsa" git push origin HEAD:master
 
   build-wheels:
     needs: version-check
@@ -185,4 +202,4 @@ jobs:
       - name: List dist
         run: find dist -type f | sort
       - uses: astral-sh/setup-uv@v4
-      - run: uv publish dist/*.whl
+      - run: uv publish --skip-existing dist/*.whl
