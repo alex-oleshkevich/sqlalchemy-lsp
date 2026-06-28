@@ -107,6 +107,7 @@ jobs:
         run: ./scripts/package-zed-extension.sh dist/
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
           files: dist/**
           generate_release_notes: true
 
@@ -202,4 +203,13 @@ jobs:
       - name: List dist
         run: find dist -type f | sort
       - uses: astral-sh/setup-uv@v4
-      - run: uv publish --check-url https://pypi.org/simple/ dist/*.whl
+      - name: Publish to PyPI
+        run: |
+          output=$(uv publish dist/*.whl 2>&1)
+          rc=$?
+          echo "$output"
+          if [ $rc -ne 0 ] && echo "$output" | grep -qE "already exists|already been registered"; then
+            echo "All files already on PyPI, skipping"
+            exit 0
+          fi
+          exit $rc
