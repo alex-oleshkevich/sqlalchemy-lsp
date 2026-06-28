@@ -205,11 +205,10 @@ jobs:
       - uses: astral-sh/setup-uv@v4
       - name: Publish to PyPI
         run: |
-          output=$(uv publish dist/*.whl 2>&1)
-          rc=$?
+          output=$(uv publish dist/*.whl 2>&1) || rc=$?
           echo "$output"
-          if [ $rc -ne 0 ] && echo "$output" | grep -qE "already exists|already been registered"; then
+          if [ "${rc:-0}" -ne 0 ] && echo "$output" | grep -qE "already exists|already been registered"; then
             echo "All files already on PyPI, skipping"
             exit 0
           fi
-          exit $rc
+          exit "${rc:-0}"
