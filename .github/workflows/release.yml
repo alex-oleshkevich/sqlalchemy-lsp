@@ -146,27 +146,6 @@ jobs:
           git commit -m "Update to ${VERSION}"
           GIT_SSH_COMMAND="ssh -i ~/.ssh/aur" git push ssh://aur@aur.archlinux.org/sqlalchemy-lsp.git HEAD:master
 
-  publish-homebrew:
-    needs: release
-    runs-on: macos-latest
-    steps:
-      - name: Bump Homebrew formula
-        env:
-          HOMEBREW_GITHUB_TOKEN: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
-          GH_REPO: ${{ github.repository }}
-          GH_TAG: ${{ github.event.inputs.tag || github.ref_name }}
-        run: |
-          VERSION="${GH_TAG#v}"
-          CHECKSUM=$(curl -sL \
-            "https://github.com/${GH_REPO}/releases/download/${GH_TAG}/sqlalchemy-lsp-macos-aarch64" \
-            | shasum -a 256 | cut -d' ' -f1)
-          brew tap alex-oleshkevich/tap https://github.com/alex-oleshkevich/homebrew-tap
-          brew bump-formula-pr \
-            --version "${VERSION}" \
-            --url "https://github.com/${GH_REPO}/releases/download/${GH_TAG}/sqlalchemy-lsp-macos-aarch64" \
-            --sha256 "${CHECKSUM}" --no-audit --no-browse \
-            alex-oleshkevich/tap/sqlalchemy-lsp
-
   build-wheels:
     needs: version-check
     strategy:
