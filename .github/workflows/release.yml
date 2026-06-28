@@ -202,4 +202,4 @@ jobs:
       - name: List dist
         run: find dist -type f | sort
       - uses: astral-sh/setup-uv@v4
-      - run: uv publish --skip-existing dist/*.whl
+      - run: uv publish --check-url https://pypi.org/simple/ dist/*.whl
