@@ -2,15 +2,25 @@
 /target/
 **/*.rs.bk
 
-# Python
+# Python artifacts (maturin wheel builds)
 __pycache__/
 *.pyc
+*.pyd
 .pytest_cache/
+dist/
+*.egg-info/
 
 # Editor extensions build output
 editors/zed/target/
 editors/vscode/node_modules/
 editors/vscode/out/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
 
 # Beads / Dolt files (added by bd init)
 .dolt/
