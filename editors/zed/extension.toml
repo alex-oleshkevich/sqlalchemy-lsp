@@ -1,6 +1,6 @@
 id = "sqlalchemy-lsp"
 name = "SQLAlchemy LSP"
-version = "0.1.1"
+version = "0.1.2"
 schema_version = 1
 authors = ["Alex Oleshkevich <alex.oleshkevich@gmail.com>"]
 description = "Language server for SQLAlchemy and Alembic: diagnostics, completion, hover, navigation"
