@@ -22,8 +22,8 @@ fn zed_extension_toml_registers_for_python() {
         .get("language_servers")
         .expect("language_servers section");
     let server = lang_servers
-        .get("sqlalchemy_lsp")
-        .expect("sqlalchemy_lsp server entry");
+        .get("sqlalchemy-lsp")
+        .expect("sqlalchemy-lsp server entry");
     let languages = server["languages"].as_array().unwrap();
     assert!(
         languages.iter().any(|l| l.as_str() == Some("Python")),
